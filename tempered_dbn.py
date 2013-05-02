@@ -108,7 +108,7 @@ class TemperedDBN(Model, Block):
         return self.batches_seen < self.max_updates
 
     def increase_timers(self):
-        # accounting...
+        """ Synchronize various timers across all RBMs under simulation """
         self.examples_seen += self.batch_size
         self.batches_seen += 1
         for rbm in self.rbms:
@@ -119,28 +119,13 @@ class TemperedDBN(Model, Block):
         if self.batches_seen % 100 == 0:
             print 'Swap ratios:', self.swap_ratios
 
-    def monitor_matrix(self, w, name=None):
-        if name is None: assert hasattr(w, 'name')
-        name = name if name else w.name
-        return {name + '.min':  w.min(axis=[0,1]),
-                name + '.max':  w.max(axis=[0,1]),
-                name + '.absmean': abs(w).mean(axis=[0,1])}
-
-    def monitor_vector(self, b, name=None):
-        if name is None: assert hasattr(b, 'name')
-        name = name if name else b.name
-        return {name + '.min':  b.min(),
-                name + '.max':  b.max(),
-                name + '.absmean': abs(b).mean()}
-
     def get_monitoring_channels(self, x, y=None):
         chans = OrderedDict()
         for i, rbm in enumerate(self.rbms):
-            chans.update(self.monitor_matrix(rbm.Wv, name='Wv.%i'%i))
-            normw = T.sqrt(T.sum(rbm.Wv**2, axis=0))
-            chans.update(self.monitor_vector(normw, name='Wv_norm.%i'%i))
+            ichans = rbm.get_monitoring_channels(x, y=y)
+            for (k,v) in ichans.iteritems():
+                chans['%s.%i' % (k,i)] = v
         return chans
-
 
 class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
 
