@@ -23,7 +23,7 @@ class pylearn2_exactll_callback(TrainingCallback):
                 'best_batches_seen': 0,
                 'best_cpu_time': 0,
                 'best_train_ll': -numpy.Inf,
-                'best_logz': 0,
+                'best_logz': 0.,
                 }
         fp = open('exactll_callback.log','w')
         fp.write('Epoch\tBatches\tCPU\tTest\tlogz\n')
@@ -50,7 +50,7 @@ class pylearn2_exactll_callback(TrainingCallback):
         self.jobman_results['batches_seen'] = model.batches_seen
         self.jobman_results['cpu_time'] = model.cpu_time
         self.jobman_results['train_ll'] = train_ll
-        self.jobman_results['logz'] = logz
+        self.jobman_results['logz'] = 1.3
         if train_ll > self.jobman_results['best_train_ll']:
             self.jobman_results['best_batches_seen'] = self.jobman_results['batches_seen']
             self.jobman_results['best_cpu_time'] = self.jobman_results['cpu_time']

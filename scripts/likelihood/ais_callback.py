@@ -3,13 +3,14 @@ import pickle
 
 from pylearn2.training_callbacks.training_callback import TrainingCallback
 from deep_tempering.scripts.likelihood import rbm_tools
+from deep_tempering.tempered_dbn import TemperedDBN
 
 class pylearn2_ais_callback(TrainingCallback):
 
-    def __init__(self, trainset, ais_interval=10):
+    def __init__(self, trainset, interval=10):
 
         self.trainset = trainset
-        self.ais_interval = ais_interval
+        self.interval = interval
 
         self.pkl_results = {
                 'batches_seen': [],
@@ -22,7 +23,7 @@ class pylearn2_ais_callback(TrainingCallback):
                 'best_batches_seen': 0,
                 'best_cpu_time': 0,
                 'best_train_ll': -numpy.Inf,
-                'best_logz': 0,
+                'best_logz': 0.,
                 }
         fp = open('ais_callback.log','w')
         fp.write('Epoch\tBatches\tCPU\tTrain\tTest\tlogz\n')
@@ -31,16 +32,20 @@ class pylearn2_ais_callback(TrainingCallback):
     def __call__(self, model, train, algorithm):
         if model.batches_seen == 0:
             return
-        if (model.batches_seen % self.ais_interval) != 0:
+        if (model.batches_seen % self.interval) != 0:
             return
+        if isinstance(model, TemperedDBN):
+            model = model.rbms[0]
 
-        (logz, var_logz) = rbm_tools.rbm_ais(
-                [model.Wv, model.vbias, model.hbias],
+        (logz, var_logz), _aisobj = rbm_tools.rbm_ais(
+                [model.Wv.get_value(),
+                 model.vbias.get_value(),
+                 model.hbias.get_value()],
                 n_runs=100,
                 data = self.trainset.X)
 
         train_ll = rbm_tools.compute_nll(model, self.trainset.X, logz,
-                model.free_energy_v)
+                model.fe_v_func)
 
         self.log(model, train_ll, logz)
         if model.jobman_channel:
