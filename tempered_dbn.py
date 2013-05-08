@@ -21,7 +21,16 @@ from utils import sharedX, floatX, npy_floatX
 
 class TemperedDBN(Model, Block):
 
-    def __init__(self, rbms=None, max_updates=1e6, **kwargs):
+    def __init__(self,
+            rbms=None, max_updates=1e6,
+            my_save_path=None, save_at=None, save_every=None,
+            **kwargs):
+        Model.__init__(self)
+        Block.__init__(self)
+        self.jobman_channel = None
+        self.jobman_state = {}
+        self.register_names_to_del(['jobman_channel'])
+
         # dump initialization parameters to object
         for (k,v) in locals().iteritems():
             if k!='self': setattr(self,k,v)
@@ -45,6 +54,7 @@ class TemperedDBN(Model, Block):
 
     def do_theano(self):
         self.build_swap_funcs()
+        self.build_inference_func()
 
     def build_swap_funcs(self):
         self.swap_funcs = []
@@ -61,6 +71,15 @@ class TemperedDBN(Model, Block):
             swap = rbm1.theano_rng.binomial(n=1, p=r, size=(self.batch_size,), dtype=floatX)
             self.swap_funcs += [theano.function([], [swap, rbm1_negh])]
             self.swap_ratios += [0.]
+
+    def build_inference_func(self):
+        rval = []
+        layer_in = self.rbms[0].input
+        for rbm in self.rbms:
+            layer_out = rbm.sample_h_given_v(layer_in)
+            rval += [layer_in]
+            layer_in = layer_out
+        self.inference_func = theano.function([self.rbms[0].input], rval)
 
     def do_swap(self, i, alpha=0.99):
         """ Perform swaps between samples of i-th and (i+1)-th RBM """
@@ -96,13 +115,12 @@ class TemperedDBN(Model, Block):
         self.increase_timers()
 
         # save to different path each epoch
-        r0 = self.rbms[0]
-        if r0.my_save_path and \
-           (self.batches_seen in r0.save_at or
-            self.batches_seen % r0.save_every == 0):
-            fname = r0.my_save_path + '_e%i.pkl' % self.batches_seen
+        if self.my_save_path and \
+           (self.batches_seen in self.save_at or
+            self.batches_seen % self.save_every == 0):
+            fname = self.my_save_path + '_e%i.pkl' % self.batches_seen
             print 'Saving to %s ...' % fname,
-            serial.save(fname, r0)
+            serial.save(fname, self)
             print 'done'
 
         return self.batches_seen < self.max_updates
@@ -130,4 +148,9 @@ class TemperedDBN(Model, Block):
 class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
 
     def setup(self, model, dataset):
+        ## Center visible units according to dataset mean
+        x = dataset.get_batch_design(1000, include_labels=False)
+        model.rbms[0].cv.set_value(x.mean(axis=0))
+        for rbm in model.rbms[1:]:
+            rbm.cv.set_value(numpy.ones(rbm.n_v, dtype=floatX) * 0.5)
         super(TrainingAlgorithm, self).setup(model, dataset)

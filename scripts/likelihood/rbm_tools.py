@@ -86,23 +86,23 @@ def compute_log_z(rbm, free_energy_fn, max_bits=15):
     return log_z
 
 
-def compute_nll(rbm, data, log_z, free_energy_fn, bufsize=1000, preproc=None):
+def compute_likelihood(rbm, data, log_z, free_energy_fn, bufsize=1000, preproc=None):
     """
     TODO: document me.
     """
     i = 0.
-    nll = 0
+    ll = 0
     for i in xrange(0, len(data), bufsize):
         # recast data as floatX and apply preprocessing if required
         x = numpy.array(data[i:i + bufsize, :], dtype=config.floatX)
         if preproc:
             x = preproc(x)
         # compute sum of likelihood for current buffer
-        x_nll = -numpy.sum(-free_energy_fn(x) - log_z)
+        x_ll = numpy.sum(-free_energy_fn(x) - log_z)
         # perform moving average of negative likelihood
         # divide by len(x) and not bufsize, since last buffer might be smaller
-        nll = (i * nll + x_nll) / (i + len(x))
-    return nll
+        ll = (i * ll + x_ll) / (i + len(x))
+    return ll
 
 
 def rbm_ais(rbm_params, n_runs, visbias_a=None, data=None,

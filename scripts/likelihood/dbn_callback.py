@@ -3,15 +3,16 @@ import pickle
 
 from pylearn2.training_callbacks.training_callback import TrainingCallback
 from deep_tempering.scripts.likelihood import rbm_tools
+from deep_tempering.scripts.likelihood import dbn_tools
 from deep_tempering.tempered_dbn import TemperedDBN
 from deep_tempering.utils import logging
 
-class pylearn2_rbm_ais_callback(TrainingCallback):
+class pylearn2_dbn_exact_callback(TrainingCallback):
 
     def __init__(self, trainset, interval=10):
         self.trainset = trainset
         self.interval = interval
-        self.logger = logging.HDF5Logger('ais_callback.hdf5')
+        self.logger = logging.HDF5Logger('dbn_callback.hdf5')
 
         self.jobman_results = {
                 'best_batches_seen': 0,
@@ -25,24 +26,16 @@ class pylearn2_rbm_ais_callback(TrainingCallback):
             return
         if (model.batches_seen % self.interval) != 0:
             return
-        if isinstance(model, TemperedDBN):
-            model = model.rbms[0]
 
-        (logz, var_logz), _aisobj = rbm_tools.rbm_ais(
-                [model.Wv.get_value(),
-                 model.vbias.get_value(),
-                 model.hbias.get_value()],
-                n_runs=100,
-                data = self.trainset.X)
+        rbm = model.rbms[-1]
+        logz = rbm_tools.compute_log_z(rbm, rbm.fe_v_func)
+        train_ll = dbn_tools.compute_likelihood_lbound(model, logz, self.trainset.X)
 
-        train_ll = rbm_tools.compute_likelihood(model,
-                self.trainset.X, logz, model.fe_v_func)
-
-        self.log(model, train_ll, logz, var_logz)
+        self.log(model, train_ll, logz)
         if model.jobman_channel:
             model.jobman_channel.save()
 
-    def log(self, model, train_ll, logz, var_logz):
+    def log(self, model, train_ll, logz):
 
         # log to database
         self.jobman_results['batches_seen'] = model.batches_seen
@@ -58,5 +51,4 @@ class pylearn2_rbm_ais_callback(TrainingCallback):
 
         self.logger.log_list(model.batches_seen,
                 [('train_ll', '%.3f', train_ll),
-                 ('logz', '%.3f', logz),
-                 ('var_logz', '%.3f', var_logz)])
+                 ('logz', '%.3f', logz)])

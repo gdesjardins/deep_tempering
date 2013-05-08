@@ -32,7 +32,8 @@ def sigm(x): return 1./(1 + numpy.exp(-x))
 class RBM(Model, Block):
 
     def validate_flags(self, flags):
-        if len(flags.keys()) != 0:
+        flags.setdefault('ml_vbias', 0)
+        if len(flags.keys()) != 1:
             raise NotImplementedError('One or more flags are currently not implemented.')
 
     def __init__(self, 
@@ -133,6 +134,8 @@ class RBM(Model, Block):
         # allocate shared variables for bias parameters
         self.vbias = sharedX(self.iscales['vbias'] * numpy.ones(self.n_v), name='vbias')
         self.hbias = sharedX(self.iscales['hbias'] * numpy.ones(self.n_h), name='hbias')
+        self.cv = sharedX(numpy.zeros(self.n_v), name='cv')
+        self.ch = 0.5
 
     def init_chains(self):
         """ Allocate shared variable for persistent chain """
@@ -162,10 +165,10 @@ class RBM(Model, Block):
         self.fe_v_func = theano.function([self.input], self.free_energy_v(self.input))
         self.fe_h_func = theano.function([self.input], self.free_energy_h(self.input))
         self.post_func = theano.function([self.input], self.h_given_v(self.input))
-        self.sample_v_given_h_func = theano.function([self.input],
-                self.sample_v_given_h(self.input))
-        self.sample_h_given_v_func = theano.function([self.input],
-                self.sample_h_given_v(self.input))
+        self.v_given_h_func = theano.function([self.input], self.v_given_h(self.input))
+        self.h_given_v_func = theano.function([self.input], self.h_given_v(self.input))
+        self.sample_v_given_h_func = theano.function([self.input], self.sample_v_given_h(self.input))
+        self.sample_h_given_v_func = theano.function([self.input], self.sample_h_given_v(self.input))
 
         ##
         # BUILD COST OBJECTS
@@ -252,6 +255,7 @@ class RBM(Model, Block):
         """
         fe  = 0.
         fe -= T.dot(v_sample, self.vbias)
+        fe += T.sum(T.dot(v_sample - self.cv, self.Wv) * self.ch, axis=1)
         h_input = self.h_given_v_input(v_sample)
         fe -= T.sum(T.nnet.softplus(h_input), axis=1)
         return fe
@@ -263,6 +267,7 @@ class RBM(Model, Block):
         """
         fe  = 0.
         fe -= T.dot(h_sample, self.hbias)
+        fe += T.sum(T.dot(h_sample - self.ch, self.Wv.T) * self.cv, axis=1)
         v_input = self.v_given_h_input(h_sample)
         fe -= T.sum(T.nnet.softplus(v_input), axis=1)
         return fe
@@ -275,7 +280,7 @@ class RBM(Model, Block):
     ######################################
 
     def h_given_v_input(self, v_sample):
-        return T.dot(v_sample, self.Wv) + self.hbias
+        return T.dot(v_sample - self.cv, self.Wv) + self.hbias
 
     def h_given_v(self, v_sample):
         h_mean = self.h_given_v_input(v_sample)
@@ -293,7 +298,7 @@ class RBM(Model, Block):
         return h_sample
 
     def v_given_h_input(self, h_sample):
-        return T.dot(h_sample, self.Wv.T) + self.vbias
+        return T.dot(h_sample - self.ch, self.Wv.T) + self.vbias
 
     def v_given_h(self, h_sample):
         """
@@ -433,10 +438,7 @@ class RBM(Model, Block):
 class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
 
     def setup(self, model, dataset):
-        x = dataset.get_batch_design(model.batch_size, include_labels=False)
-        ml_vbias = rbm_utils.compute_ml_bias(x)
-        model.vbias.set_value(ml_vbias)
-        pval_v = sigm(model.vbias.get_value())
-        neg_v = model.rng.binomial(n=1, p=pval_v, size=(model.batch_size, model.n_v))
-        model.neg_v.set_value(neg_v.astype(floatX))
+        ## set centering coefficients
+        x = dataset.get_batch_design(1000, include_labels=False)
+        self.cv = x.mean(axis=0)
         super(TrainingAlgorithm, self).setup(model, dataset)
