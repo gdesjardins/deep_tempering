@@ -33,7 +33,8 @@ class RBM(Model, Block):
 
     def validate_flags(self, flags):
         flags.setdefault('ml_vbias', 0)
-        if len(flags.keys()) != 1:
+        flags.setdefault('enable_centering', False)
+        if len(flags.keys()) != 2:
             raise NotImplementedError('One or more flags are currently not implemented.')
 
     def __init__(self, 
@@ -135,7 +136,8 @@ class RBM(Model, Block):
         self.vbias = sharedX(self.iscales['vbias'] * numpy.ones(self.n_v), name='vbias')
         self.hbias = sharedX(self.iscales['hbias'] * numpy.ones(self.n_h), name='hbias')
         self.cv = sharedX(numpy.zeros(self.n_v), name='cv')
-        self.ch = 0.5
+        ch = numpy.ones(self.n_h) * (0.5 if self.flags['enable_centering'] else 0.)
+        self.ch = sharedX(ch, name='ch')
 
     def init_chains(self):
         """ Allocate shared variable for persistent chain """
@@ -148,6 +150,12 @@ class RBM(Model, Block):
         """
         params = [self.Wv, self.vbias, self.hbias]
         return params
+
+    def get_uncentered_param_values(self):
+        Wv = self.Wv.get_value()
+        vbias = self.vbias.get_value() - numpy.dot(self.ch.get_value(), Wv.T)
+        hbias = self.hbias.get_value() - numpy.dot(self.cv.get_value(), Wv)
+        return [Wv, vbias, hbias]
 
     def do_theano(self):
         """ Compiles all theano functions needed to use the model"""
@@ -248,14 +256,14 @@ class RBM(Model, Block):
 
         return self.batches_seen < self.max_updates
 
-    def free_energy_v(self, v_sample):
+    def free_energy_v(self, v_sample, center=True):
         """
         Computes free-energy of visible samples.
         :param v_sample: T.matrix of shape (batch_size, n_v)
         """
         fe  = 0.
         fe -= T.dot(v_sample, self.vbias)
-        fe += T.sum(T.dot(v_sample - self.cv, self.Wv) * self.ch, axis=1)
+        fe += T.sum(T.dot(v_sample, self.Wv) * self.ch, axis=1)
         h_input = self.h_given_v_input(v_sample)
         fe -= T.sum(T.nnet.softplus(h_input), axis=1)
         return fe
@@ -267,7 +275,7 @@ class RBM(Model, Block):
         """
         fe  = 0.
         fe -= T.dot(h_sample, self.hbias)
-        fe += T.sum(T.dot(h_sample - self.ch, self.Wv.T) * self.cv, axis=1)
+        fe += T.sum(T.dot(h_sample, self.Wv.T) * self.cv, axis=1)
         v_input = self.v_given_h_input(h_sample)
         fe -= T.sum(T.nnet.softplus(v_input), axis=1)
         return fe
@@ -439,6 +447,8 @@ class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
 
     def setup(self, model, dataset):
         ## set centering coefficients
-        x = dataset.get_batch_design(1000, include_labels=False)
-        self.cv = x.mean(axis=0)
+        if model.flags['enable_centering']:
+            x = dataset.X if hasattr(dataset, 'X') else\
+                dataset.get_batch_design(1000, include_labels=False)
+            model.cv.set_value(x.mean(axis=0).astype(floatX))
         super(TrainingAlgorithm, self).setup(model, dataset)

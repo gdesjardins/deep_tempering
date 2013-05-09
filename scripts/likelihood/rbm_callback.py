@@ -6,12 +6,12 @@ from deep_tempering.scripts.likelihood import rbm_tools
 from deep_tempering.tempered_dbn import TemperedDBN
 from deep_tempering.utils import logging
 
-class pylearn2_rbm_ais_callback(TrainingCallback):
+class pylearn2_rbm_likelihood_callback(TrainingCallback):
 
     def __init__(self, trainset, interval=10):
         self.trainset = trainset
         self.interval = interval
-        self.logger = logging.HDF5Logger('ais_callback.hdf5')
+        self.logger = logging.HDF5Logger('rbm_likelihood_callback.hdf5')
 
         self.jobman_results = {
                 'best_batches_seen': 0,
@@ -21,19 +21,20 @@ class pylearn2_rbm_ais_callback(TrainingCallback):
                 }
 
     def __call__(self, model, train, algorithm):
-        if model.batches_seen == 0:
-            return
-        if (model.batches_seen % self.interval) != 0:
+        if (model.batches_seen == 0) or (model.batches_seen % self.interval) != 0:
             return
         if isinstance(model, TemperedDBN):
             model = model.rbms[0]
 
-        (logz, var_logz), _aisobj = rbm_tools.rbm_ais(
-                [model.Wv.get_value(),
-                 model.vbias.get_value(),
-                 model.hbias.get_value()],
-                n_runs=100,
-                data = self.trainset.X)
+        if (model.n_h <= 25):
+            (logz, var_logz) = rbm_tools.compute_log_z(model, model.fe_h_func), 0.
+        elif (model.n_v <= 25):
+            (logz, var_logz) = rbm_tools.compute_log_z(model, model.fe_v_func), 0.
+        else:
+            (logz, var_logz), _aisobj = rbm_tools.rbm_ais(
+                    model.get_uncentered_param_values(),
+                    n_runs=100,
+                    data = self.trainset.X)
 
         train_ll = rbm_tools.compute_likelihood(model,
                 self.trainset.X, logz, model.fe_v_func)

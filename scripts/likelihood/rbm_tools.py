@@ -106,7 +106,8 @@ def compute_likelihood(rbm, data, log_z, free_energy_fn, bufsize=1000, preproc=N
 
 
 def rbm_ais(rbm_params, n_runs, visbias_a=None, data=None,
-            betas=None, key_betas=None, rng=None, seed=23098):
+            betas=None, key_betas=None, rng=None,
+            seed=23098):
     """
     Implements Annealed Importance Sampling for Binary-Binary RBMs, as
     described in:
@@ -177,11 +178,13 @@ def rbm_ais(rbm_params, n_runs, visbias_a=None, data=None,
     # generate exact sample for the base model
     v0 = numpy.tile(1. / (1 + numpy.exp(-visbias_a)), (n_runs, 1))
     v0 = numpy.array(v0 > rng.random_sample(v0.shape), dtype=config.floatX)
+
     # we now compute the log AIS weights for the ratio log(Zb/Za)
     ais = rbm_z_ratio((weights_a, visbias_a, hidbias_a),
                       rbm_params, n_runs, v0,
                       betas=betas, key_betas=key_betas, rng=rng)
     dlogz, var_dlogz = ais.estimate_from_weights()
+
     # log Z = log_za + dlogz
     ais.log_za = weights_a.shape[1] * numpy.log(2) + \
                  numpy.sum(numpy.log(1 + numpy.exp(visbias_a)))

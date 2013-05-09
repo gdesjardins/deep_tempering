@@ -39,6 +39,8 @@ class TemperedDBN(Model, Block):
         for (rbm1, rbm2) in zip(rbms[:-1], rbms[1:]):
             assert rbm1.n_h == rbm2.n_v
             assert rbm1.batch_size == rbm2.batch_size
+            assert rbm1.flags['enable_centering']
+            assert rbm2.flags['enable_centering']
         self.rbms = rbms
         self.depth = len(rbms)
 
@@ -79,6 +81,7 @@ class TemperedDBN(Model, Block):
             layer_out = rbm.sample_h_given_v(layer_in)
             rval += [layer_in]
             layer_in = layer_out
+        rval += [layer_in]
         self.inference_func = theano.function([self.rbms[0].input], rval)
 
     def do_swap(self, i, alpha=0.99):
@@ -148,9 +151,18 @@ class TemperedDBN(Model, Block):
 class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
 
     def setup(self, model, dataset):
-        ## Center visible units according to dataset mean
-        x = dataset.get_batch_design(1000, include_labels=False)
-        model.rbms[0].cv.set_value(x.mean(axis=0))
-        for rbm in model.rbms[1:]:
-            rbm.cv.set_value(numpy.ones(rbm.n_v, dtype=floatX) * 0.5)
+
+        # enable centering coefficients of first layer based on datamean
+        for i, rbm in enumerate(model.rbms):
+
+            if i == 0 and hasattr(dataset, 'X'):
+                x = dataset.X
+            elif i == 0:
+                x = dataset.get_batch_design(1000, include_labels=False)
+            else:
+                x = numpy.ones((1,rbm.n_v), dtype=floatX) * 0.5
+
+            if rbm.flags['enable_centering']:
+                rbm.cv.set_value(x.mean(axis=0))
+
         super(TrainingAlgorithm, self).setup(model, dataset)
