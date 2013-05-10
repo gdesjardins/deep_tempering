@@ -78,7 +78,7 @@ class TemperedDBN(Model, Block):
         rval = []
         layer_in = self.rbms[0].input
         for rbm in self.rbms:
-            layer_out = rbm.sample_h_given_v(layer_in)
+            layer_out = rbm.h_given_v(layer_in)
             rval += [layer_in]
             layer_in = layer_out
         rval += [layer_in]
@@ -106,12 +106,10 @@ class TemperedDBN(Model, Block):
 
         t1 = time.time()
         # Compute approximate posterior at each layer
-        xs = [x]
-        for rbm in self.rbms[:-1]:
-            xs += [rbm.post_func(xs[-1])]
-        # Train each layer to model the previous layer's posterior
-        for x, rbm in zip(xs, self.rbms):
+        for rbm in self.rbms:
             rbm.batch_train_func(x)
+            x = rbm.post_func(x)
+
         self.do_swaps()
         self.cpu_time += time.time() - t1
 
