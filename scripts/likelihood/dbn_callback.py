@@ -66,4 +66,4 @@ class pylearn2_dbn_likelihood_callback(TrainingCallback):
         self.logger.log_list(model.batches_seen,
                 [('train_ll', '%.3f', train_ll),
                  ('logz', '%.3f', logz),
-                 ('var_logz', '%.3f', logz)])
+                 ('var_logz', '%.3f', var_logz)])
