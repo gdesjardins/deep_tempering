@@ -163,6 +163,6 @@ class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
                 x = numpy.ones((1,rbm.n_v), dtype=floatX) * 0.5
 
             if rbm.flags['enable_centering']:
-                rbm.cv.set_value(x.mean(axis=0))
+                rbm.cv.set_value(x.mean(axis=0).astype(floatX))
 
         super(TrainingAlgorithm, self).setup(model, dataset)
