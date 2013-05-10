@@ -27,7 +27,7 @@ class pylearn2_dbn_likelihood_callback(TrainingCallback):
                 }
 
     def __call__(self, model, train, algorithm):
-        if (model.batches_seen == 0) or (model.batches_seen % self.interval) != 0:
+        if (model.batches_seen % self.interval) != 0:
             return
 
         rbm = model.rbms[-1]
@@ -53,8 +53,8 @@ class pylearn2_dbn_likelihood_callback(TrainingCallback):
         self.jobman_results['batches_seen'] = model.batches_seen
         self.jobman_results['cpu_time'] = model.cpu_time
         self.jobman_results['train_ll'] = train_ll
-        self.jobman_results['logz'] = logz
-        self.jobman_results['var_logz'] = var_logz
+        self.jobman_results['logz'] = float(logz)
+        self.jobman_results['var_logz'] = float(var_logz)
         if train_ll > self.jobman_results['best_train_ll']:
             self.jobman_results['best_batches_seen'] = self.jobman_results['batches_seen']
             self.jobman_results['best_cpu_time'] = self.jobman_results['cpu_time']

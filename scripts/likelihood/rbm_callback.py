@@ -18,10 +18,11 @@ class pylearn2_rbm_likelihood_callback(TrainingCallback):
                 'best_cpu_time': 0,
                 'best_train_ll': -numpy.Inf,
                 'best_logz': 0.,
+                'best_var_logz': 0.,
                 }
 
     def __call__(self, model, train, algorithm):
-        if (model.batches_seen == 0) or (model.batches_seen % self.interval) != 0:
+        if (model.batches_seen % self.interval) != 0:
             return
         if isinstance(model, TemperedDBN):
             model = model.rbms[0]
@@ -49,12 +50,14 @@ class pylearn2_rbm_likelihood_callback(TrainingCallback):
         self.jobman_results['batches_seen'] = model.batches_seen
         self.jobman_results['cpu_time'] = model.cpu_time
         self.jobman_results['train_ll'] = train_ll
-        self.jobman_results['logz'] = logz
+        self.jobman_results['logz'] = float(logz)
+        self.jobman_results['var_logz'] = float(var_logz)
         if train_ll > self.jobman_results['best_train_ll']:
             self.jobman_results['best_batches_seen'] = self.jobman_results['batches_seen']
             self.jobman_results['best_cpu_time'] = self.jobman_results['cpu_time']
             self.jobman_results['best_train_ll'] = self.jobman_results['train_ll']
             self.jobman_results['best_logz'] = self.jobman_results['logz']
+            self.jobman_results['best_var_logz'] = self.jobman_results['var_logz']
         model.jobman_state.update(self.jobman_results)
 
         self.logger.log_list(model.batches_seen,
