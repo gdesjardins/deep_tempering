@@ -17,7 +17,10 @@ logging.basicConfig(level=logging.INFO)
 def xent(p, k):
     return -k * numpy.log(p+1e-5) - (1. - k ) * numpy.log(1-p+1e-5)
 
-def compute_likelihood_lbound(model, log_z, test_x):
+def bernouilli(rbm, mean):
+    return (rbm.rng.random_sample(mean.shape) < mean).astype(floatX)
+
+def compute_likelihood_lbound(model, log_z, test_x, M=5):
     """
     Compute likelihood as below, where q is the variational approximation
     q(v,h1,h2,h3) := q(h1|v)q(h2|h1)q(h2,h3) to p(h1,h2,h3|v)
@@ -37,6 +40,8 @@ def compute_likelihood_lbound(model, log_z, test_x):
         Estimate partition function of last-layer RBM.
     test_x: numpy.ndarray
         Data to compute likelihood.
+    M: int
+        See Eq.(23) of AIS paper for details.
 
     Returns:
     --------
@@ -48,25 +53,35 @@ def compute_likelihood_lbound(model, log_z, test_x):
 
         # recast data as floatX and apply preprocessing if required
         x = numpy.array(test_x[i:i + model.batch_size, :], dtype=floatX)
-        eq_log_px = 0.
 
-        # perform inference
-        psamples = model.inference_func(x)
+        # compute mean-field approximation to posterior
+        posmfs = model.inference_func(x)
 
-        # Main term from expected log p(h2,h3) under q.
-        # psamples[-2] := h2
-        eq_log_px += -model.rbms[-1].fe_v_func(psamples[-2])
+        # ln p(v,h_1, ..., h_{L-1}, h_L) = ln p(v|h1) +... ln p(h_{L-2}|h_{L-1}) + ln p(h_{L-1})
+        # where we have marginalized out h_L in the last term of the summation.
+        _eq_log_px = 0
 
-        # Other likelihood terms of the form E_q [log p(h_i|h_{i+1})]
-        # Notation: lhs := h_i, rhs:= h_{i+1}
-        for rbm, lhs, rhs in zip(model.rbms, psamples[:-2], psamples[1:-1]):
-            p_hi_given_hip1 = rbm.v_given_h_func(rhs)
-            eq_log_px += -xent(p_hi_given_hip1, lhs).sum(axis=1)
+        # Estimate E_q[ln p(h_{L-1})]
+        for j in xrange(M):
+            h_lm1_mean = posmfs[-2]
+            h_lm1_sample = bernouilli(model.rbms[-1], h_lm1_mean)
+            _eq_log_px += -model.rbms[-1].fe_v_func(h_lm1_sample)
+
+        # Estimate E_q[ ln p(h_i | h_{i+1}) ], for all i < L-1
+        for rbm, hi_mean, hip1_mean in zip(model.rbms[:-1], posmfs[:-2], posmfs[1:-1]):
+            for j in xrange(M):
+                # draw sample from Q(h_i | h_{i-1})
+                hi_sample = bernouilli(rbm, hi_mean)
+                # Compute likelihood contribution from log p(h_i|h_{i+1})]
+                p_hi_given_hip1 = rbm.v_given_h_func(hip1_mean)
+                _eq_log_px += -xent(p_hi_given_hip1, hi_sample).sum(axis=1)
+            
+        eq_log_px = _eq_log_px / M
 
         # Contribution of the entropy of h(q) to the variational lower bound
         hq = 0
-        for psample in psamples[1:]:
-            temp = xent(psample, psample)
+        for posmf in posmfs[1:]:
+            temp = xent(posmf, posmf)
             hq += numpy.sum(temp, axis=1)
         eq_log_px += hq
 
