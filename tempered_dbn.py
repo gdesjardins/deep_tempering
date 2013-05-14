@@ -72,7 +72,7 @@ class TemperedDBN(Model, Block):
             r = T.minimum(1, T.exp(logr))
             swap = rbm1.theano_rng.binomial(n=1, p=r, size=(self.batch_size,), dtype=floatX)
             self.swap_funcs += [theano.function([], [swap, rbm1_negh])]
-            self.swap_ratios += [0.]
+            self.swap_ratios += [1.]
 
     def build_inference_func(self):
         rval = []
