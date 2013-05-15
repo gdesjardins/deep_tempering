@@ -21,14 +21,20 @@ from utils import sharedX, floatX, npy_floatX
 
 class TemperedDBN(Model, Block):
 
+    def validate_flags(self, flags):
+        flags.setdefault('train_on_samples', False)
+        if len(flags.keys()) != 1:
+            raise notimplementederror('one or more flags are currently not implemented.')
+
     def __init__(self,
-            rbms=None, max_updates=1e6,
+            rbms=None, max_updates=1e6, flags={},
             my_save_path=None, save_at=None, save_every=None,
             **kwargs):
         Model.__init__(self)
         Block.__init__(self)
         self.jobman_channel = None
         self.jobman_state = {}
+        self.validate_flags(flags)
         self.register_names_to_del(['jobman_channel'])
 
         # dump initialization parameters to object
@@ -43,6 +49,7 @@ class TemperedDBN(Model, Block):
             assert rbm2.flags['enable_centering']
         self.rbms = rbms
         self.depth = len(rbms)
+        self.rng = self.rbms[0].rng
 
         # configure input-space (necessary evil)
         self.input_space = VectorSpace(self.rbms[0].n_v)
@@ -101,16 +108,28 @@ class TemperedDBN(Model, Block):
         for i in xrange(self.depth - 1):
             self.do_swap(i)
 
-    def train_batch(self, dataset, batch_size):
-        x = dataset.get_batch_design(batch_size, include_labels=False)
+    def do_sample(self):
+        for rbm in self.rbms:
+            rbm.sample_func()
 
-        t1 = time.time()
-        # Compute approximate posterior at each layer
+    def do_learn(self, x):
         for rbm in self.rbms:
             rbm.batch_train_func(x)
-            x = rbm.post_func(x)
+            if self.flags['train_on_samples']:
+                x = rbm.sample_h_given_v_func(x)
+            else:
+                x = rbm.h_given_v_func(x)
 
+    def train_batch(self, dataset, batch_size):
+
+        x = dataset.get_batch_design(batch_size, include_labels=False)
+        if self.flags['train_on_samples']:
+            x = (self.rng.random_sample(x.shape) < x).astype(floatX)
+
+        t1 = time.time()
+        self.do_sample()
         self.do_swaps()
+        self.do_learn(x)
         self.cpu_time += time.time() - t1
 
         self.increase_timers()
