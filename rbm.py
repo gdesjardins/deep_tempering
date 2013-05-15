@@ -165,11 +165,11 @@ class RBM(Model, Block):
         ###### All fields you don't want to get pickled (e.g., theano functions) should be created below this line
         # SAMPLING: NEGATIVE PHASE
         neg_updates = self.neg_sampling_updates(n_steps=self.neg_sample_steps, use_pcd=True)
+        self.sample_func = theano.function([], [], updates=neg_updates)
 
         ##
         # HELPER FUNCTIONS
         ##
-        self.sample_func = theano.function([], [], updates=neg_updates)
         self.fe_v_func = theano.function([self.input], self.free_energy_v(self.input))
         self.fe_h_func = theano.function([self.input], self.free_energy_h(self.input))
         self.post_func = theano.function([self.input], self.h_given_v(self.input))
@@ -181,7 +181,7 @@ class RBM(Model, Block):
         ##
         # BUILD COST OBJECTS
         ##
-        lcost = self.ml_cost(pos_v = self.input, neg_v = neg_updates[self.neg_v])
+        lcost = self.ml_cost(pos_v = self.input, neg_v = self.neg_v)
         spcost = self.get_sparsity_cost()
         regcost = self.get_reg_cost(self.l2, self.l1)
 
@@ -195,7 +195,6 @@ class RBM(Model, Block):
         # BUILD UPDATES DICTIONARY FROM GRADIENTS
         ##
         learning_updates = costmod.get_updates(learning_grads)
-        learning_updates.update(neg_updates)
         learning_updates.update({self.iter: self.iter+1})
 
         # build theano function to train on a single minibatch
@@ -237,6 +236,7 @@ class RBM(Model, Block):
         x = dataset.get_batch_design(batch_size, include_labels=False)
 
         t1 = time.time()
+        self.sample_func()
         self.batch_train_func(x.astype(floatX))
         self.enforce_constraints()
         self.cpu_time += time.time() - t1
@@ -256,7 +256,7 @@ class RBM(Model, Block):
 
         return self.batches_seen < self.max_updates
 
-    def free_energy_v(self, v_sample, center=True):
+    def free_energy_v(self, v_sample):
         """
         Computes free-energy of visible samples.
         :param v_sample: T.matrix of shape (batch_size, n_v)
