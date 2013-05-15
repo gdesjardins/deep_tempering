@@ -8,10 +8,11 @@ from deep_tempering.utils import logging
 
 class pylearn2_rbm_likelihood_callback(TrainingCallback):
 
-    def __init__(self, trainset, interval=10):
+    def __init__(self, trainset, interval=10, layer=0):
         self.trainset = trainset
         self.interval = interval
-        self.logger = logging.HDF5Logger('rbm_likelihood_callback.hdf5')
+        self.layer = layer
+        self.logger = logging.HDF5Logger('rbm%i_likelihood_callback.hdf5' % layer)
 
         self.jobman_results = {
                 'best_batches_seen': 0,
@@ -22,25 +23,38 @@ class pylearn2_rbm_likelihood_callback(TrainingCallback):
                 }
 
     def __call__(self, model, train, algorithm):
+
+        def preproc(x):
+            """
+            Helper function which generates the representation at layer `self.layer`.
+            """
+            for rbm in model.rbms[:self.layer]:
+                x = rbm.post_func(x)
+            return x
+
         if (model.batches_seen % self.interval) != 0:
             return
         if isinstance(model, TemperedDBN):
-            model = model.rbms[0]
+            rbm = model.rbms[self.layer]
 
-        if (model.n_h <= 25):
-            (logz, var_logz) = rbm_tools.compute_log_z(model, model.fe_h_func), 0.
-        elif (model.n_v <= 25):
-            (logz, var_logz) = rbm_tools.compute_log_z(model, model.fe_v_func), 0.
+        if (rbm.n_h <= 25):
+            (logz, var_logz) = rbm_tools.compute_log_z(rbm, rbm.fe_h_func), 0.
+        elif (rbm.n_v <= 25):
+            (logz, var_logz) = rbm_tools.compute_log_z(rbm, rbm.fe_v_func), 0.
         else:
             (logz, var_logz), _aisobj = rbm_tools.rbm_ais(
-                    model.get_uncentered_param_values(),
+                    rbm.get_uncentered_param_values(),
                     n_runs=100,
-                    data = self.trainset.X)
+                    data = self.trainset.X,
+                    preproc = preproc)
 
-        train_ll = rbm_tools.compute_likelihood(model,
-                self.trainset.X, logz, model.fe_v_func)
+        train_ll = rbm_tools.compute_likelihood(rbm,
+                data = self.trainset.X,
+                log_z = logz,
+                free_energy_fn = rbm.fe_v_func,
+                preproc = preproc)
 
-        self.log(model, train_ll, logz, var_logz)
+        self.log(rbm, train_ll, logz, var_logz)
         if model.jobman_channel:
             model.jobman_channel.save()
 

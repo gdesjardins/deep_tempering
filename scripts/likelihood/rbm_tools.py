@@ -106,7 +106,7 @@ def compute_likelihood(rbm, data, log_z, free_energy_fn, bufsize=1000, preproc=N
 
 
 def rbm_ais(rbm_params, n_runs, visbias_a=None, data=None,
-            betas=None, key_betas=None, rng=None,
+            betas=None, key_betas=None, rng=None, preproc=None,
             seed=23098):
     """
     Implements Annealed Importance Sampling for Binary-Binary RBMs, as
@@ -168,6 +168,7 @@ def rbm_ais(rbm_params, n_runs, visbias_a=None, data=None,
             visbias_a = visbias_a
     else:
         # set biases of base-rate model to ML solution
+        data = preproc(data)
         data = numpy.asarray(data, dtype=config.floatX)
         data = numpy.mean(data, axis=0)
         data = numpy.minimum(data, 1 - 1e-5)
