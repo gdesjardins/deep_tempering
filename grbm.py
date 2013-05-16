@@ -391,7 +391,7 @@ class GaussianRBM(Model, Block):
         cost = T.zeros((), dtype=floatX)
         if self.sp_weight['h']:
             params += [self.Wv, self.hbias]
-            cost += self.sp_weight['h']  * T.sum(loss(self.sp_targ['h'], hack_h.mean(axis=0)))
+            cost += self.sp_weight['h']  * T.sum(loss(self.sp_targ['h'], hack_h).mean(axis=0))
 
         return costmod.Cost(cost, params, [hack_h])
 

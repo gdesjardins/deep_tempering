@@ -34,7 +34,8 @@ class RBM(Model, Block):
     def validate_flags(self, flags):
         flags.setdefault('ml_vbias', 0)
         flags.setdefault('enable_centering', False)
-        if len(flags.keys()) != 2:
+        flags.setdefault('train_on_samples', False)
+        if len(flags.keys()) != 3:
             raise NotImplementedError('One or more flags are currently not implemented.')
 
     def __init__(self, 
@@ -48,7 +49,7 @@ class RBM(Model, Block):
             compile=True, debug=False, seed=1241234,
             my_save_path=None, save_at=None, save_every=None,
             flags = {},
-            max_updates = 5e5):
+            max_updates = 5e5, **kwargs):
         """
         :param n_h: number of h-hidden units
         :param n_v: number of visible units
@@ -111,9 +112,10 @@ class RBM(Model, Block):
         self.input_space = VectorSpace(n_v)
         self.output_space = VectorSpace(n_h)
 
-        self.batches_seen = 0                    # incremented on every batch
-        self.examples_seen = 0                   # incremented on every training example
+        self.batches_seen = 0               # incremented on every batch
+        self.examples_seen = 0              # incremented on every training example
         self.force_batch_size = batch_size  # force minibatch size
+        self.logz = None                    # attribute can be updated by callbacks
         self.cpu_time = 0
 
         self.error_record = []
@@ -234,10 +236,14 @@ class RBM(Model, Block):
     def train_batch(self, dataset, batch_size):
 
         x = dataset.get_batch_design(batch_size, include_labels=False)
+        if self.flags['train_on_samples']:
+            x = (self.rng.random_sample(x.shape) < x).astype(floatX)
 
         t1 = time.time()
         self.sample_func()
         self.batch_train_func(x.astype(floatX))
+        # invalidate partition function after update
+        self.logz = None
         self.enforce_constraints()
         self.cpu_time += time.time() - t1
 
@@ -387,7 +393,7 @@ class RBM(Model, Block):
         cost = T.zeros((), dtype=floatX)
         if self.sp_weight['h']:
             params += [self.Wv, self.hbias]
-            cost += self.sp_weight['h']  * T.sum(loss(self.sp_targ['h'], hack_h.mean(axis=0)))
+            cost += self.sp_weight['h']  * T.sum(loss(self.sp_targ['h'], hack_h).mean(axis=0))
 
         return costmod.Cost(cost, params, [hack_h])
 
