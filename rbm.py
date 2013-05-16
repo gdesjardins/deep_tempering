@@ -115,7 +115,7 @@ class RBM(Model, Block):
         self.batches_seen = 0               # incremented on every batch
         self.examples_seen = 0              # incremented on every training example
         self.force_batch_size = batch_size  # force minibatch size
-        self.logz = None                    # attribute can be updated by callbacks
+        self.logz = sharedX(0.0, name='logz')
         self.cpu_time = 0
 
         self.error_record = []
@@ -197,7 +197,10 @@ class RBM(Model, Block):
         # BUILD UPDATES DICTIONARY FROM GRADIENTS
         ##
         learning_updates = costmod.get_updates(learning_grads)
-        learning_updates.update({self.iter: self.iter+1})
+        learning_updates.update({
+            self.iter: self.iter+1,
+            self.logz: 0.0,
+        })
 
         # build theano function to train on a single minibatch
         self.batch_train_func = function([self.input], [],
@@ -243,7 +246,6 @@ class RBM(Model, Block):
         self.sample_func()
         self.batch_train_func(x.astype(floatX))
         # invalidate partition function after update
-        self.logz = None
         self.enforce_constraints()
         self.cpu_time += time.time() - t1
 
