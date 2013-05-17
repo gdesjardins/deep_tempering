@@ -20,7 +20,7 @@ def xent(p, k):
 def bernouilli(rng, mean):
     return (rng.random_sample(mean.shape) < mean).astype(floatX)
 
-def compute_likelihood_lbound(model, log_z, test_x, M=5):
+def compute_likelihood_lbound(model, log_z, test_x, M=10):
     """
     Compute likelihood as below, where q is the variational approximation
     q(v,h1,h2,h3) := q(h1|v)q(h2|h1)q(h2,h3) to p(h1,h2,h3|v)
@@ -53,10 +53,7 @@ def compute_likelihood_lbound(model, log_z, test_x, M=5):
     for i in xrange(0, len(test_x), model.batch_size):
 
         # recast data as floatX and apply preprocessing if required
-        x = numpy.array(test_x[i:i + model.batch_size, :], dtype=floatX)
-
-        # compute mean-field approximation to posterior
-        posmfs = model.inference_func(x)
+        batch_x = numpy.array(test_x[i:i + model.batch_size, :], dtype=floatX)
 
         # ln p(v,h_1, ..., h_{L-1}, h_L) = ln p(v|h1) +... ln p(h_{L-2}|h_{L-1}) + ln p(h_{L-1})
         # where we have marginalized out h_L in the last term of the summation.
@@ -66,12 +63,10 @@ def compute_likelihood_lbound(model, log_z, test_x, M=5):
         for j in xrange(M):
 
             # Generate samples from mean-field distributions
-            samples = [posmfs[0]]
-            for i in range(1,len(posmfs)):
-                samples += [bernouilli(model.rbms[i-1].rng, posmfs[i])]
+            samples = model.inference_sample_func(batch_x)
 
+            # Estimate E_q[ ln p(h_{L-1})
             _eq_log_px += -model.rbms[-1].fe_v_func(samples[-2])
-
             # Estimate E_q[ ln p(h_i | h_{i+1}) ], for all i < L-1
             for rbm, hi, hip1 in zip(model.rbms[:-1], samples[:-2], samples[1:-1]):
                 p_hi_given_hip1 = rbm.v_given_h_func(hip1)
@@ -82,22 +77,23 @@ def compute_likelihood_lbound(model, log_z, test_x, M=5):
         # Contribution of the entropy of h(q) to the variational lower bound.
         # Do not count entropy of p(h_L | h_{L-1}), since h_L has been marginalized.
         hq = 0
+        
+        # compute mean-field approximation to posterior
+        posmfs = model.inference_func(batch_x)
         for posmf in posmfs[1:-1]:
             hq += xent(posmf, posmf).sum(axis=1)
         eq_log_px += hq
 
         # perform moving average of negative likelihood
         # divide by len(x) and not bufsize, since last buffer might be smaller
-        eq_log_p = (i * eq_log_p + eq_log_px.sum()) / (i + len(x))
+        eq_log_p = (i * eq_log_p + eq_log_px.sum()) / (i + len(batch_x))
 
-    eq_log_p -= log_z
-
-    return eq_log_p
+    return eq_log_p - log_z
 
 def logmean(x, axis=0):
     return numpy.log(numpy.exp(x - x.max()).mean(axis=axis)) + x.max()
 
-def compute_likelihood_lbound_theis(model, log_z, test_x, M=5):
+def compute_likelihood_lbound_theis(model, log_z, test_x, M=200):
     """
     See Figure 4 of "In all likelihood, deep belief is not enough", Theis et al.
     """
@@ -105,27 +101,21 @@ def compute_likelihood_lbound_theis(model, log_z, test_x, M=5):
     i = 0.
     ulogprob = 0
 
-    for i in xrange(0, len(test_x), model.batch_size):
+    logiws = numpy.zeros((M, len(test_x)))
+    x = test_x.astype(floatX)
 
+    for j in xrange(M):
         # recast data as floatX and apply preprocessing if required
-        x = numpy.array(test_x[i:i + model.batch_size, :], dtype=floatX)
+        sample = x
+        for rbm in model.rbms[:-1]:
+            logiws[j] += -rbm.fe_v_func(sample)
+            sample = rbm.sample_h_given_v_func(sample)
+            logiws[j] -= -rbm.fe_h_func(sample)
+        logiws[j] += -model.rbms[-1].fe_v_func(sample)
 
-        logiws = numpy.zeros((M, model.batch_size)) 
-
-        for j in xrange(M):
-            sample = x
-            for rbm in model.rbms[:-1]:
-                logiws[j, :] += -rbm.fe_v_func(sample)
-                sample = rbm.sample_h_given_v_func(sample)
-                logiws[j, :] += -rbm.fe_h_func(sample)
-            logiws[j, :] += model.rbms[-1].fe_v_func(sample)
-
-        ulogprob_x = logmean(logiws, axis=0)
-
-        # perform moving average of negative likelihood
-        # divide by len(x) and not bufsize, since last buffer might be smaller
-        ulogprob = (i * ulogprob + ulogprob_x.sum()) / (i + len(x))
-
-    logprob = ulogprob - log_z
+    ulogprob = logmean(logiws, axis=0)
+    logprob = ulogprob.mean() - log_z
+    print 'theis:', logprob
+    print 'lower bound:', logiws.mean() - log_z
 
     return logprob

@@ -45,8 +45,8 @@ class TemperedDBN(Model, Block):
         for (rbm1, rbm2) in zip(rbms[:-1], rbms[1:]):
             assert rbm1.n_h == rbm2.n_v
             assert rbm1.batch_size == rbm2.batch_size
-            assert rbm1.flags['enable_centering']
-            assert rbm2.flags['enable_centering']
+            #assert rbm1.flags['enable_centering']
+            #assert rbm2.flags['enable_centering']
         self.rbms = rbms
         self.depth = len(rbms)
         self.rng = self.rbms[0].rng
@@ -63,7 +63,8 @@ class TemperedDBN(Model, Block):
 
     def do_theano(self):
         self.build_swap_funcs()
-        self.build_inference_func()
+        self.build_inference_func(sample=True)
+        self.build_inference_func(sample=False)
 
     def build_swap_funcs(self):
         self.swap_funcs = []
@@ -81,15 +82,23 @@ class TemperedDBN(Model, Block):
             self.swap_funcs += [theano.function([], [swap, rbm1_negh])]
             self.swap_ratios += [1.]
 
-    def build_inference_func(self):
+    def build_inference_func(self, sample=False):
         rval = []
         layer_in = self.rbms[0].input
         for rbm in self.rbms:
-            layer_out = rbm.h_given_v(layer_in)
+            if sample:
+                layer_out = rbm.sample_h_given_v(layer_in)
+            else:
+                layer_out = rbm.h_given_v(layer_in)
             rval += [layer_in]
             layer_in = layer_out
         rval += [layer_in]
-        self.inference_func = theano.function([self.rbms[0].input], rval)
+
+        func = theano.function([self.rbms[0].input], rval)
+        if sample:
+            self.inference_sample_func = func
+        else:
+            self.inference_func = func
 
     def do_swap(self, i, alpha=0.99):
         """ Perform swaps between samples of i-th and (i+1)-th RBM """
