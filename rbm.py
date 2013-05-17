@@ -39,7 +39,7 @@ class RBM(Model, Block):
             raise NotImplementedError('One or more flags are currently not implemented.')
 
     def __init__(self, 
-            numpy_rng = None, theano_rng = None, gibbs_vhv=True,
+            numpy_rng = None, theano_rng = None,
             n_h=99, n_v=100, init_from=None, neg_sample_steps=1,
             lr_spec=None, lr_mults = {},
             iscales={}, clip_min={}, clip_max={},
@@ -308,8 +308,7 @@ class RBM(Model, Block):
         """
         h_mean = self.h_given_v(v_sample)
         rng = self.theano_rng if rng is None else rng
-        size = size if size else self.batch_size
-        h_sample = rng.binomial(size=(size, self.n_h),
+        h_sample = rng.binomial(size=(h_mean.shape[0], self.n_h),
                                 n=1, p=h_mean, dtype=floatX)
         return h_sample
 
@@ -327,8 +326,7 @@ class RBM(Model, Block):
     def sample_v_given_h(self, h_sample, rng=None, size=None):
         v_mean = self.v_given_h(h_sample)
         rng = self.theano_rng if rng is None else rng
-        size = size if size else self.batch_size
-        v_sample = rng.binomial(size=(size, self.n_v),
+        v_sample = rng.binomial(size=(v_mean.shape[0], self.n_v),
                                 n=1, p=v_mean, dtype=floatX)
         return v_sample
 
@@ -343,12 +341,8 @@ class RBM(Model, Block):
         :param n_steps: number of Gibbs updates to perform in negative phase.
         """
         def gibbs_iteration(h1, v1, size):
-            if self.gibbs_vhv:
-                h2 = self.sample_h_given_v(v1, size=size)
-                v2 = self.sample_v_given_h(h2, size=size)
-            else:
-                v2 = self.sample_v_given_h(h1, size=size)
-                h2 = self.sample_h_given_v(v2, size=size)
+            h2 = self.sample_h_given_v(v1, size=size)
+            v2 = self.sample_v_given_h(h2, size=size)
             return [h2, v2]
 
         [new_h, new_v] , updates = theano.scan(
