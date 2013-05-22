@@ -38,6 +38,18 @@ class RBM(Model, Block):
         if len(flags.keys()) != 3:
             raise NotImplementedError('One or more flags are currently not implemented.')
 
+    @classmethod
+    def quick_alloc(cls, n_v, n_h):
+        lr_spec = {'type': 'linear', 'start':1e-3, 'end':1e-3}
+        iscales={'Wv':0.01, 'vbias':0, 'hbias':0}
+        sp_weight={'h':0.}
+        sp_targ={'h':0.1}
+        return cls(n_v = n_v, n_h = n_h,
+                lr_spec = lr_spec,
+                iscales = iscales,
+                sp_weight = sp_weight,
+                sp_targ = sp_targ)
+
     def __init__(self, 
             numpy_rng = None, theano_rng = None,
             n_h=99, n_v=100, init_from=None, neg_sample_steps=1,
@@ -101,6 +113,8 @@ class RBM(Model, Block):
             num = lr_spec['init'] * lr_spec['start'] 
             denum = T.maximum(lr_spec['start'], lr_spec['slope'] * self.iter)
             self.lr = T.maximum(lr_spec['floor'], num/denum) 
+        elif lr_spec['type'] == '1_t':
+            self.lr = lr_spec['num'] / (self.iter + lr_spec['denum'])
         elif lr_spec['type'] == 'linear':
             lr_start = npy_floatX(lr_spec['start'])
             lr_end   = npy_floatX(lr_spec['end'])
@@ -114,7 +128,6 @@ class RBM(Model, Block):
 
         self.batches_seen = 0               # incremented on every batch
         self.examples_seen = 0              # incremented on every training example
-        self.force_batch_size = batch_size  # force minibatch size
         self.logz = sharedX(0.0, name='logz')
         self.cpu_time = 0
 
@@ -143,6 +156,7 @@ class RBM(Model, Block):
 
     def init_chains(self):
         """ Allocate shared variable for persistent chain """
+        self.neg_ev = sharedX(self.rng.rand(self.batch_size, self.n_v), name='neg_ev')
         self.neg_v  = sharedX(self.rng.rand(self.batch_size, self.n_v), name='neg_v')
         self.neg_h  = sharedX(self.rng.rand(self.batch_size, self.n_h), name='neg_h')
  
@@ -250,7 +264,7 @@ class RBM(Model, Block):
         self.cpu_time += time.time() - t1
 
         # accounting...
-        self.examples_seen += self.batch_size
+        self.examples_seen += len(x)
         self.batches_seen += 1
 
         # save to different path each epoch
@@ -341,17 +355,18 @@ class RBM(Model, Block):
         :param n_steps: number of Gibbs updates to perform in negative phase.
         """
         def gibbs_iteration(h1, v1, size):
-            h2 = self.sample_h_given_v(v1, size=size)
-            v2 = self.sample_v_given_h(h2, size=size)
-            return [h2, v2]
+            h2  = self.sample_h_given_v(v1, size=size)
+            v2  = self.sample_v_given_h(h2, size=size)
+            ev2 = self.v_given_h(h2)
+            return [h2, v2, ev2]
 
-        [new_h, new_v] , updates = theano.scan(
+        [new_h, new_v, new_ev] , updates = theano.scan(
                 gibbs_iteration,
-                outputs_info = [h_sample, v_sample],
+                outputs_info = [h_sample, v_sample, None],
                 non_sequences = [v_sample.shape[0]],
                 n_steps=n_steps)
 
-        return [new_h[-1], new_v[-1]]
+        return [new_h[-1], new_v[-1], new_ev[-1]]
 
     def neg_sampling_updates(self, n_steps=1, use_pcd=True):
         """
@@ -359,19 +374,19 @@ class RBM(Model, Block):
         :param n_steps: scalar, number of Gibbs steps to perform.
         """
         init_chain = self.neg_v if use_pcd else self.input
-        [new_h, new_v] =  self.neg_sampling(
+        [new_h, new_v, new_ev] =  self.neg_sampling(
                 self.neg_h, self.neg_v, n_steps = n_steps)
 
         updates = OrderedDict()
         updates[self.neg_h] = new_h
         updates[self.neg_v] = new_v
+        updates[self.neg_ev] = new_ev
         return updates
 
     def ml_cost(self, pos_v, neg_v):
-        pos_cost = T.sum(self.free_energy_v(pos_v))
-        neg_cost = T.sum(self.free_energy_v(neg_v))
-        batch_cost = pos_cost - neg_cost
-        cost = batch_cost / self.batch_size
+        pos_cost = T.mean(self.free_energy_v(pos_v))
+        neg_cost = T.mean(self.free_energy_v(neg_v))
+        cost = pos_cost - neg_cost
         # build gradient of cost with respect to model parameters
         return costmod.Cost(cost, self.params(), [pos_v, neg_v])
 
@@ -381,7 +396,7 @@ class RBM(Model, Block):
     def get_sparsity_cost(self):
         hack_h = self.h_given_v(self.input)
         # define loss based on value of sp_type
-        eps = npy_floatX(1./self.batch_size)
+        eps = npy_floatX(1e-5)
         loss = lambda targ, val: - npy_floatX(targ) * T.log(eps + val) \
                                  - npy_floatX(1-targ) * T.log(1 - val + eps)
 
