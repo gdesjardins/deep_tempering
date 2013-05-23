@@ -151,6 +151,7 @@ class OnlineModesNIPSDLUFL(OnlineModes):
                 p=[0.0001, 0.0137, 0.0215, 0.0223, 0.0544])
 
         ## this is the fixed testset
+        self.which_set = 'test'
         self.X = numpy.zeros((1e4, 28*28))
         for i in xrange(len(self.X)):
             self.X[i] = self.next()[0]
