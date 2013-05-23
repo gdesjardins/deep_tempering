@@ -24,7 +24,8 @@ class TemperedDBN(Model, Block):
 
     def validate_flags(self, flags):
         flags.setdefault('train_on_samples', False)
-        if len(flags.keys()) != 1:
+        flags.setdefault('pretrain', False)
+        if len(flags.keys()) != 2:
             raise notimplementederror('one or more flags are currently not implemented.')
 
     def __init__(self,
@@ -60,12 +61,29 @@ class TemperedDBN(Model, Block):
         self.examples_seen = 0 # incremented on every training example
         self.batch_size = self.rbms[0].batch_size
         self.cpu_time = 0
+        self.init_train_sequence()
         self.do_theano()
+
+    def init_parameters_from_data(self, x):
+        """
+        Override default model initialization, using training data statistics.
+        """
+        for i, rbm in enumerate(self.rbms):
+            if i == 0:
+                rbm.init_parameters_from_data(x)
+            else:
+                new_x = numpy.ones((1, rbm.n_h)) * 0.5
+                rbm.init_parameters_from_data(new_x)
 
     def do_theano(self):
         self.build_swap_funcs()
         self.build_inference_func(sample=True)
         self.build_inference_func(sample=False)
+
+    def init_train_sequence(self):
+        self.rbms[0].flags['learn'] = True
+        for rbm in self.rbms[1:]:
+            rbm.flags['learn'] = False if self.flags['pretrain'] else True
 
     def build_swap_funcs(self):
         self.swap_funcs = []
@@ -124,7 +142,8 @@ class TemperedDBN(Model, Block):
 
     def do_learn(self, x):
         for rbm in self.rbms:
-            rbm.batch_train_func(x)
+            if rbm.flags['learn']:
+                rbm.batch_train_func(x)
             if self.flags['train_on_samples']:
                 x = rbm.sample_h_given_v_func(x)
             else:
@@ -152,6 +171,7 @@ class TemperedDBN(Model, Block):
         if self.my_save_path and \
            (self.batches_seen in self.save_at or
             self.batches_seen % self.save_every == 0):
+            import pdb; pdb.set_trace()
             fname = self.my_save_path + '_e%i.pkl' % self.batches_seen
             print 'Saving to %s ...' % fname,
             serial.save(fname, self)
