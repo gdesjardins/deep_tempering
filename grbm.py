@@ -58,7 +58,6 @@ class GaussianRBM(Model, Block):
             sp_weight={}, sp_targ={},
             batch_size = 13,
             compile=True, debug=False, seed=1241234,
-            my_save_path=None, save_at=None, save_every=None,
             flags = {},
             max_updates = 5e5):
         """
@@ -266,15 +265,6 @@ class GaussianRBM(Model, Block):
         # accounting...
         self.examples_seen += len(x)
         self.batches_seen += 1
-
-        # save to different path each epoch
-        if self.my_save_path and \
-           (self.batches_seen in self.save_at or
-            self.batches_seen % self.save_every == 0):
-            fname = self.my_save_path + '_e%i.pkl' % self.batches_seen
-            print 'Saving to %s ...' % fname,
-            serial.save(fname, self)
-            print 'done'
 
         return self.batches_seen < self.max_updates
 

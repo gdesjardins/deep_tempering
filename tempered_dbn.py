@@ -30,7 +30,6 @@ class TemperedDBN(Model, Block):
 
     def __init__(self,
             rbms=None, max_updates=1e6, flags={},
-            my_save_path=None, save_at=None, save_every=None,
             **kwargs):
         Model.__init__(self)
         Block.__init__(self)
@@ -99,7 +98,7 @@ class TemperedDBN(Model, Block):
             r = T.minimum(1, T.exp(logr))
             swap = rbm1.theano_rng.binomial(n=1, p=r, size=(self.batch_size,), dtype=floatX)
             self.swap_funcs += [theano.function([], [swap, rbm1_negh])]
-            self.swap_ratios += [1.]
+            self.swap_ratios += [0.]
 
     def build_inference_func(self, sample=False):
         rval = []
@@ -156,26 +155,17 @@ class TemperedDBN(Model, Block):
         except StopIteration:
             dataset._iterator._subset_iterator.shuffle()
             x = dataset._iterator.next()
+
         if self.flags['train_on_samples']:
-            x = (self.rng.random_sample(x.shape) < x).astype(floatX)
+            x = self.rng.random_sample(x.shape) < x
 
         t1 = time.time()
         self.do_sample()
-        self.do_swaps()
-        self.do_learn(x)
+        if not self.flags['pretrain']:
+            self.do_swaps()
+        self.do_learn(x.astype(floatX))
         self.cpu_time += time.time() - t1
-
         self.increase_timers()
-
-        # save to different path each epoch
-        if self.my_save_path and \
-           (self.batches_seen in self.save_at or
-            self.batches_seen % self.save_every == 0):
-            import pdb; pdb.set_trace()
-            fname = self.my_save_path + '_e%i.pkl' % self.batches_seen
-            print 'Saving to %s ...' % fname,
-            serial.save(fname, self)
-            print 'done'
 
         return self.batches_seen < self.max_updates
 
@@ -203,8 +193,12 @@ class TemperedDBN(Model, Block):
         # save each RBM in a separate pickle file
         self.rbm_fnames = []
         for i, rbm in enumerate(self.rbms):
-            self.rbm_fnames += ['rbm%i.pkl' % i]
-            serial.save(self.rbm_fnames[-1], rbm)
+            fname = '.rbm%i_e%i.pkl' % (i, self.batches_seen)
+            # Always log filename of most recently saved model
+            # TODO: move functionality to serial.save
+            rbm.fname = fname
+            serial.save(fname, rbm)
+            self.rbm_fnames.append(fname)
 
         rval = super(TemperedDBN, self).__getstate__()
         rval.pop('rbms')

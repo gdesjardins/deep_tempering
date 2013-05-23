@@ -59,7 +59,6 @@ class RBM(Model, Block):
             sp_weight={}, sp_targ={},
             batch_size = 13,
             compile=True, debug=False, seed=1241234,
-            my_save_path=None, save_at=None, save_every=None,
             flags = {},
             max_updates = 5e5, **kwargs):
         """
@@ -271,15 +270,6 @@ class RBM(Model, Block):
         self.examples_seen += len(x)
         self.batches_seen += 1
 
-        # save to different path each epoch
-        if self.my_save_path and \
-           (self.batches_seen in self.save_at or
-            self.batches_seen % self.save_every == 0):
-            fname = self.my_save_path + '_e%i.pkl' % self.batches_seen
-            print 'Saving to %s ...' % fname,
-            serial.save(fname, self)
-            print 'done'
-
         return self.batches_seen < self.max_updates
 
     def free_energy_v(self, v_sample):
@@ -464,3 +454,27 @@ class RBM(Model, Block):
         chans.update(self.monitor_vector(wv_norm, name='wv_norm'))
         chans['lr'] = self.lr
         return chans
+
+
+def reload_params(rbm, fname):
+
+    fp = open(fname, 'r')
+    model = pickle.load(fp)
+    fp.close()
+    rbm.Wv.set_value(model.Wv.get_value())
+    rbm.hbias.set_value(model.hbias.get_value())
+    rbm.vbias.set_value(model.vbias.get_value())
+
+    # sync random number generators
+    rbm.rng.set_state(model.rng.get_state())
+    rbm.theano_rng.rstate = model.theano_rng.rstate
+    for (rbm_rng_state, model_rng_state) in \
+            zip(rbm.theano_rng.state_updates, 
+                model.theano_rng.state_updates):
+        rbm_rng_state[0].set_value(model_rng_state[0].get_value())
+
+    # reset misc. attributes
+    rbm.batches_seen = model.batches_seen
+    rbm.examples_seen = model.examples_seen
+    rbm.logz.set_value(model.logz.get_value())
+    rbm.cpu_time = model.cpu_time
