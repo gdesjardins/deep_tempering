@@ -11,10 +11,13 @@ class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
         elif i == 0:
             x = dataset.get_batch_design(1000, include_labels=False)
         model.init_parameters_from_data(x)
-
-        dataset._iterator = dataset.iterator(
-                mode='shuffled_sequential',
-                batch_size=model.batch_size)
-
+    
+        if hasattr(dataset, 'iterator'):
+            dataset._iterator = dataset.iterator(
+                    mode='shuffled_sequential',
+                    batch_size=model.batch_size)
+        else:
+            # HACK: _iterator.next() will simply call dataset.next()
+            dataset._iterator = dataset
 
         super(TrainingAlgorithm, self).setup(model, dataset)
