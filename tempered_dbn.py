@@ -1,6 +1,7 @@
 import numpy
 import copy
 import time
+import pickle
 from collections import OrderedDict
 
 import theano
@@ -131,7 +132,11 @@ class TemperedDBN(Model, Block):
 
     def train_batch(self, dataset, batch_size):
 
-        x = dataset.get_batch_design(batch_size, include_labels=False)
+        try:
+            x = dataset._iterator.next()
+        except StopIteration:
+            dataset._iterator._subset_iterator.shuffle()
+            x = dataset._iterator.next()
         if self.flags['train_on_samples']:
             x = (self.rng.random_sample(x.shape) < x).astype(floatX)
 
@@ -174,21 +179,22 @@ class TemperedDBN(Model, Block):
                 chans['%s.%i' % (k,i)] = v
         return chans
 
-class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
+    def __getstate__(self):
+        # save each RBM in a separate pickle file
+        self.rbm_fnames = []
+        for i, rbm in enumerate(self.rbms):
+            self.rbm_fnames += ['rbm%i.pkl' % i]
+            serial.save(self.rbm_fnames[-1], rbm)
 
-    def setup(self, model, dataset):
+        rval = super(TemperedDBN, self).__getstate__()
+        rval.pop('rbms')
+        return rval
 
-        # enable centering coefficients of first layer based on datamean
-        for i, rbm in enumerate(model.rbms):
-
-            if i == 0 and hasattr(dataset, 'X'):
-                x = dataset.X
-            elif i == 0:
-                x = dataset.get_batch_design(1000, include_labels=False)
-            else:
-                x = numpy.ones((1,rbm.n_v), dtype=floatX) * 0.5
-
-            if rbm.flags['enable_centering']:
-                rbm.cv.set_value(x.mean(axis=0).astype(floatX))
-
-        super(TrainingAlgorithm, self).setup(model, dataset)
+    def __setstate__(self, d):
+        self.__dict__.update(d)
+        self.rbms = []
+        for i, fname in enumerate(self.rbm_fnames):
+            fp = open(fname)
+            self.rbms += [serial.load(fname)]
+            fp.close()
+        d.pop('rbm_fnames')

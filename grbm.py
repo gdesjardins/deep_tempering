@@ -153,6 +153,10 @@ class GaussianRBM(Model, Block):
         # centering coefficient (only required for visible units)
         self.cv = sharedX(numpy.zeros(self.n_v), name='cv')
 
+    def init_parameters_from_data(self, x):
+        if self.flags['enable_centering']:
+            self.cv.set_value(x.mean(axis=0).astype(floatX))
+
     def init_chains(self):
         """ Allocate shared variable for persistent chain """
         self.neg_ev  = sharedX(self.rng.rand(self.batch_size, self.n_v), name='neg_ev')
@@ -459,18 +463,8 @@ class GaussianRBM(Model, Block):
         chans.update(self.monitor_vector(self.lambd_prec, name='lambd_prec'))
         chans.update(self.monitor_matrix(self.neg_h))
         chans.update(self.monitor_matrix(self.neg_v))
+        chans.update(self.monitor_matrix(self.cv))
         wv_norm = T.sqrt(T.sum(self.Wv**2, axis=0))
         chans.update(self.monitor_vector(wv_norm, name='wv_norm'))
         chans['lr'] = self.lr
         return chans
-
-class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
-
-    def setup(self, model, dataset):
-        ## set centering coefficients
-        if model.flags['enable_centering']:
-            x = dataset.X if hasattr(dataset, 'X') else\
-                dataset.get_batch_design(1000, include_labels=False)
-            model.cv.set_value(x.mean(axis=0).astype(floatX))
-
-        super(TrainingAlgorithm, self).setup(model, dataset)
