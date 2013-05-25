@@ -71,7 +71,7 @@ class TemperedDBN(Model, Block):
             if i == 0:
                 rbm.init_parameters_from_data(x)
             else:
-                new_x = numpy.ones((1, rbm.n_h)) * 0.5
+                new_x = numpy.ones((1, rbm.n_v)) * 0.5
                 rbm.init_parameters_from_data(new_x)
 
     def do_theano(self):
@@ -153,7 +153,10 @@ class TemperedDBN(Model, Block):
         try:
             x = dataset._iterator.next()
         except StopIteration:
-            dataset._iterator._subset_iterator.shuffle()
+            if hasattr(dataset._iterator._subset_iterator, 'shuffe'):
+                dataset._iterator._subset_iterator.shuffle()
+            else:
+                dataset._iterator._subset_iterator.reset()
             x = dataset._iterator.next()
 
         if self.flags['train_on_samples']:
