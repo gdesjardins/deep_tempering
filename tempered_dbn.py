@@ -25,7 +25,8 @@ class TemperedDBN(Model, Block):
     def validate_flags(self, flags):
         flags.setdefault('train_on_samples', False)
         flags.setdefault('pretrain', False)
-        if len(flags.keys()) != 2:
+        flags.setdefault('order', 'swap_sample_learn')
+        if len(flags.keys()) != 3:
             raise notimplementederror('one or more flags are currently not implemented.')
 
     def __init__(self,
@@ -133,7 +134,19 @@ class TemperedDBN(Model, Block):
 
     def do_swaps(self):
         for i in xrange(self.depth - 1):
-            self.do_swap(i)
+            if len(self.rbms) == 2:
+                # always swap for 2-layer model
+                self.do_swap(i)
+            else:
+                # When using > 2 layers, we swap RBMs (i,i+1) with even i, on
+                # even iterations, and RBMs (i,i+1) with odd i, on odd
+                # iterations.
+                if i % 2 == 0 and self.batches_seen % 2 == 0:
+                    # swap even layers at even iterations
+                    self.do_swap(i)
+                elif i % 2 == 1 and self.batches_seen % 2 == 1:
+                    # swap odd layers at odd iterations
+                    self.do_swap(i)
 
     def do_sample(self):
         for rbm in self.rbms:
@@ -163,10 +176,19 @@ class TemperedDBN(Model, Block):
             x = self.rng.random_sample(x.shape) < x
 
         t1 = time.time()
-        self.do_sample()
-        if not self.flags['pretrain']:
-            self.do_swaps()
-        self.do_learn(x.astype(floatX))
+        if self.flags['order'] == 'sample_swap_learn':
+            self.do_sample()
+            if not self.flags['pretrain']:
+                self.do_swaps()
+            self.do_learn(x.astype(floatX))
+        elif self.flags['order'] == 'swap_sample_learn':
+            if not self.flags['pretrain']:
+                self.do_swaps()
+            self.do_sample()
+            self.do_learn(x.astype(floatX))
+        else:
+            raise ValueError('Invalid setting for flags[order]')
+
         self.cpu_time += time.time() - t1
         self.increase_timers()
 
