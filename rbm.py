@@ -113,11 +113,19 @@ class RBM(Model, Block):
             denum = T.maximum(lr_spec['start'], lr_spec['slope'] * self.iter)
             self.lr = T.maximum(lr_spec['floor'], num/denum) 
         elif lr_spec['type'] == '1_t':
-            self.lr = lr_spec['num'] / (self.iter + lr_spec['denum'])
+            self.lr = npy_floatX(lr_spec['mult'] * lr_spec['num']) / (self.iter + npy_floatX(lr_spec['denum']))
+        elif lr_spec['type'] == 'delayed_1_t':
+            _iter = self.iter - npy_floatX(lr_spec['delay'])
+            self.lr = T.switch(
+                    self.iter < lr_spec['delay'],
+                    npy_floatX(lr_spec['init']),
+                    npy_floatX(lr_spec['mult'] * lr_spec['num']) / (_iter + npy_floatX(lr_spec['denum'])))
         elif lr_spec['type'] == 'linear':
             lr_start = npy_floatX(lr_spec['start'])
             lr_end   = npy_floatX(lr_spec['end'])
             self.lr = lr_start + self.iter * (lr_end - lr_start) / npy_floatX(self.max_updates)
+        elif lr_spec['type'] == 'constant':
+            self.lr = sharedX(lr_spec['value'], name='lr')
         else:
             raise ValueError('Incorrect value for lr_spec[type]')
 
