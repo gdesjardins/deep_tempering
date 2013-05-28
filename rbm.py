@@ -265,7 +265,15 @@ class RBM(Model, Block):
  
     def train_batch(self, dataset, batch_size):
 
-        x = dataset.get_batch_design(batch_size, include_labels=False)
+        try:
+            x = dataset._iterator.next()
+        except StopIteration:
+            if hasattr(dataset._iterator._subset_iterator, 'shuffe'):
+                dataset._iterator._subset_iterator.shuffle()
+            else:
+                dataset._iterator._subset_iterator.reset()
+            x = dataset._iterator.next()
+
         if self.flags['train_on_samples']:
             x = (self.rng.random_sample(x.shape) < x).astype(floatX)
 
