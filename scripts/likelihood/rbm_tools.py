@@ -363,11 +363,11 @@ class AIS(object):
 
     # default configuration for interpolating distributions
     dflt_beta = numpy.hstack((fX(numpy.linspace(0, 0.5, 1e3)),
-                              fX(numpy.linspace(0.5, 0.9, 2e4)),
-                              fX(numpy.linspace(0.9, 1.0, 5e4))))
+                              fX(numpy.linspace(0.5, 0.9, 1e4)),
+                              fX(numpy.linspace(0.9, 1.0, 1e5))))
 
     def __init__(self, sample_fn, free_energy_fn, v_sample0, n_runs,
-                 log_int=500):
+                 log_int=500, verbose=False):
         """
         Initialized the AIS object.
 
@@ -399,6 +399,7 @@ class AIS(object):
         self.v_sample0 = v_sample0
         self.n_runs = n_runs
         self.log_int = log_int
+        self.verbose = verbose
 
         # initialize log importance weights
         self.log_ais_w = numpy.zeros(n_runs, dtype=config.floatX)
@@ -483,6 +484,9 @@ class AIS(object):
 
             # generate a new sample at temperature beta_{i+1}
             state = self.sample_fn(bp1, state)
+            if self.verbose and i%100==0:
+                print '%i/%i ' % (i, len(self.betas))
+        print ''
 
     def estimate_from_weights(self, log_ais_w=None):
         """
