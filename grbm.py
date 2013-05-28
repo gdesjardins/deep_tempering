@@ -111,6 +111,8 @@ class GaussianRBM(Model, Block):
             num = lr_spec['init'] * lr_spec['start'] 
             denum = T.maximum(lr_spec['start'], lr_spec['slope'] * self.iter)
             self.lr = T.maximum(lr_spec['floor'], num/denum) 
+        elif lr_spec['type'] == '1_t':
+            self.lr = npy_floatX(lr_spec['num']) / (self.iter + npy_floatX(lr_spec['denum']))
         elif lr_spec['type'] == 'linear':
             lr_start = npy_floatX(lr_spec['start'])
             lr_end   = npy_floatX(lr_spec['end'])
@@ -122,8 +124,8 @@ class GaussianRBM(Model, Block):
         self.input_space = VectorSpace(n_v)
         self.output_space = VectorSpace(n_h)
 
-        self.batches_seen = 0                    # incremented on every batch
-        self.examples_seen = 0                   # incremented on every training example
+        self.batches_seen = 0               # incremented on every batch
+        self.examples_seen = 0              # incremented on every training example
         self.cpu_time = 0
 
         self.error_record = []
