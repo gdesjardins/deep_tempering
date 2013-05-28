@@ -31,9 +31,9 @@ parser.add_option('--color', action='store_true',  dest='color', default=False)
 parser.add_option('--rings',  action='store', type='string', dest='rings', default=None)
 parser.add_option('--nsamples',  action='store', type='int', dest='nsamples')
 parser.add_option('--burnin',  action='store', type='int', dest='burnin')
-parser.add_option('--layer',  action='store', type='int', dest='layer', default=-1)
 parser.add_option('--skip',  action='store', type='int', dest='skip')
 parser.add_option('--norb',  action='store_true', dest='norb')
+parser.add_option('--batches_per_image',  action='store', type='int', dest='batches_per_image', default=10)
 (opts, args) = parser.parse_args()
 
 def get_dims(nf):
@@ -56,57 +56,53 @@ viewdims = slice(0, None) if opts.color else 0
 
 # load model and retrieve parameters
 model = serial.load(opts.path)
-assert opts.layer < len(model.rbms)
-layer = len(model.rbms) - 1 if opts.layer == -1 else opts.layer
-
+model.init_chains()
 model.do_theano()
-for rbm in model.rbms:
-    rbm.init_chains()
-    rbm.do_theano()
 
 #### random init ####
 rng = numpy.random.RandomState(123)
-bsize = model.rbms[0].batch_size
-samples = numpy.zeros((bsize, opts.nsamples, model.rbms[0].n_v))
+bsize = model.batch_size
+samples = numpy.zeros((opts.nsamples, bsize, model.n_v))
 
 def reset_chains():
-    for rbm in model.rbms:
-        vbias = sigm(rbm.vbias.get_value())
-        negv = rng.binomial(n=1, p=vbias,
-                size=(bsize, rbm.n_v))
-        rbm.neg_v.set_value(negv.astype(floatX))
+    vbias = sigm(model.vbias.get_value())
+    negv = rng.binomial(n=1, p=vbias, size=(bsize, model.n_v))
+    model.neg_v.set_value(negv.astype(floatX))
 
 reset_chains()
 for i in xrange(opts.burnin):
-    model.do_sample()
+    model.sample_func()
 
 for i in xrange(opts.nsamples):
     for j in xrange(opts.skip):
-        model.do_swaps()
-        model.do_sample()
-    samples[:,i,:] = model.rbms[0].neg_ev.get_value()
+        model.sample_func()
+    samples[i, :, :] = model.neg_ev.get_value()
 
 if opts.norb:
     from deep_tempering.data import grbm_preproc
     grbm = grbm_preproc.GRBMPreprocessor()
-    _temp = grbm.reconstruct(samples.reshape(-1, model.rbms[0].n_v))
-    samples = _temp.reshape(samples.shape)
+    _temp = grbm.reconstruct(samples.reshape(-1, model.n_v))
+    del samples
+    samples = _temp.reshape(opts.nsamples, bsize, _temp.shape[1])
 
-viewer = PatchViewer(get_dims(opts.nsamples),
+viewer = PatchViewer((opts.nsamples, opts.batches_per_image),
                      (opts.height, opts.width),
                       is_color = opts.color,
                       pad=(10,10))
 
-for k in xrange(bsize):
-
-    if opts.rings:
-        b_sample = retina.decode(samples[k], (opts.height, opts.width, opts.chans), opts.rings)
-    else:
-        b_sample = samples[k].reshape(opts.nsamples, opts.height, opts.width, opts.chans)
-
+mbsize = opts.batches_per_image
+for kbase in xrange(0, bsize, mbsize):
     for i in xrange(opts.nsamples):
-        viewer.add_patch(b_sample[i,:,:,0])
+
+        bidx = slice(kbase, kbase+mbsize)
+        if opts.rings:
+            b_sample = retina.decode(samples[i, bidx], (opts.height, opts.width, opts.chans), opts.rings)
+        else:
+            b_sample = samples[i, bidx].reshape(bsize, opts.height, opts.width, opts.chans)
+
+        for k in xrange(mbsize):
+            viewer.add_patch(b_sample[k,:,:,0])
 
     pl.imshow(viewer.image)
-    pl.savefig('samples_batch%i.png' % k)
+    pl.savefig('samples_batch%i.png' % kbase)
     viewer.clear()
