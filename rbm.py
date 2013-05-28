@@ -162,6 +162,8 @@ class RBM(Model, Block):
         self.ch = sharedX(ch, name='ch')
 
     def init_parameters_from_data(self, x):
+        if self.flags['ml_vbias']:
+            self.vbias.set_value(rbm_utils.compute_ml_bias(x))
         if self.flags['enable_centering']:
             self.cv.set_value(x.mean(axis=0).astype(floatX))
  
