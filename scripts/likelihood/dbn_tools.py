@@ -67,6 +67,7 @@ def compute_likelihood_lbound(model, log_z, test_x, M=10):
 
             # Estimate E_q[ ln p(h_{L-1})
             _eq_log_px += -model.rbms[-1].fe_v_func(samples[-2])
+
             # Estimate E_q[ ln p(h_i | h_{i+1}) ], for all i < L-1
             for rbm, hi, hip1 in zip(model.rbms[:-1], samples[:-2], samples[1:-1]):
                 p_hi_given_hip1 = rbm.v_given_h_func(hip1)
