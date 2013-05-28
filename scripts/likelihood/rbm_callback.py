@@ -43,6 +43,7 @@ class pylearn2_rbm_likelihood_callback(TrainingCallback):
             return
 
         rbm = model.rbms[self.layer] if isinstance(model, TemperedDBN) else model
+        rbm.uncenter()
 
         logz = rbm.logz.get_value()
         if not logz:
@@ -53,7 +54,7 @@ class pylearn2_rbm_likelihood_callback(TrainingCallback):
                 (logz, var_logz) = rbm_tools.compute_log_z(rbm, rbm.fe_v_func), 0.
             else:
                 (logz, var_logz), _aisobj = rbm_tools.rbm_ais(
-                        rbm.get_uncentered_param_values(),
+                        rbm.get_param_values(),
                         n_runs=100,
                         data = self.trainset.X,
                         preproc = preproc)
@@ -65,6 +66,9 @@ class pylearn2_rbm_likelihood_callback(TrainingCallback):
                 log_z = logz,
                 free_energy_fn = rbm.fe_v_func,
                 preproc = preproc)
+
+        # recenter model
+        rbm.recenter()
 
         self.log(rbm, train_ll, logz, rbm.var_logz)
         if model.jobman_channel:

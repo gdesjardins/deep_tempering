@@ -75,6 +75,14 @@ class TemperedDBN(Model, Block):
                 new_x = numpy.ones((1, rbm.n_v)) * 0.5
                 rbm.init_parameters_from_data(new_x)
 
+    def uncenter(self):
+        for rbm in self.rbms:
+            rbm.uncenter()
+
+    def recenter(self):
+        for rbm in self.rbms:
+            rbm.recenter()
+
     def do_theano(self):
         self.build_swap_funcs()
         self.build_inference_func(sample=True)

@@ -38,6 +38,8 @@ class pylearn2_dbn_likelihood_callback(TrainingCallback):
         if (model.batches_seen % self.interval) != 0:
             return
 
+        model.uncenter()
+
         rbm = model.rbms[self.layer]
 
         logz = rbm.logz.get_value()
@@ -48,12 +50,15 @@ class pylearn2_dbn_likelihood_callback(TrainingCallback):
                 (logz, var_logz) = rbm_tools.compute_log_z(rbm, rbm.fe_v_func), 0.
             else:
                 (logz, var_logz), _aisobj = rbm_tools.rbm_ais(
-                        rbm.get_uncentered_param_values(),
+                        rbm.get_param_values(),
                         n_runs=100)
             rbm.logz.set_value(npy_floatX(logz))
             rbm.var_logz = var_logz
 
         train_ll = dbn_tools.compute_likelihood_lbound(model, logz, self.trainset.X)
+
+        # recenter model
+        model.recenter()
 
         self.log(model, train_ll, logz, rbm.var_logz)
         if model.jobman_channel:

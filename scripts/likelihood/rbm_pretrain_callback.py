@@ -44,6 +44,7 @@ class pylearn2_rbm_pretrain_callback(TrainingCallback):
             return
 
         rbm = model.rbms[self.layer] if isinstance(model, TemperedDBN) else model
+        rbm.uncenter()
 
         logz = rbm.logz.get_value()
         if not logz:
@@ -66,19 +67,25 @@ class pylearn2_rbm_pretrain_callback(TrainingCallback):
                 log_z = logz,
                 free_energy_fn = rbm.fe_v_func,
                 preproc = preproc)
+        print 'rbm%i: current=%f\t best=%f' % (self.layer, train_ll, self.jobman_results['best_train_ll'])
 
-        is_increasing = self.log(rbm, train_ll, logz, rbm.var_logz)
-        if model.flags['pretrain'] and rbm.flags['learn'] and not is_increasing:
-            self.stop_pretrain(model, rbm)
+        is_increasing = train_ll >= self.jobman_results['best_train_ll']
+
+        # recenter model
+        rbm.recenter()
+
+        if model.flags['pretrain']:
+            if is_increasing:
+                self.log(rbm, train_ll, logz, rbm.var_logz)
+            elif rbm.flags['learn']:
+                self.stop_pretrain(model, rbm)
+        else:
+            self.log(rbm, train_ll, logz, rbm.var_logz)
 
         if model.jobman_channel:
             model.jobman_channel.save()
 
     def log(self, model, train_ll, logz, var_logz):
-
-        print 'rbm%i: best=%f\t current=%f\n' % (self.layer, train_ll, self.jobman_results['best_train_ll'])
-        if train_ll < self.jobman_results['best_train_ll']:
-            return False
 
         # log to database
         self.jobman_results['batches_seen'] = model.batches_seen
@@ -99,8 +106,6 @@ class pylearn2_rbm_pretrain_callback(TrainingCallback):
                  ('logz', '%.3f', logz),
                  ('var_logz', '%.3f', var_logz)])
 
-        return True
-
     def stop_pretrain(self, model, rbm):
         assert rbm.flags['learn']
 
@@ -109,8 +114,8 @@ class pylearn2_rbm_pretrain_callback(TrainingCallback):
         reload_params(rbm, rbm.fname)
         print 'done.'
 
-        if self.layer == len(model.rbms)-1:
-            # Done pretraining the last level RBM. Move to joint-training.
+        if self.layer == len(model.rbms)-2:
+            # Done pretraining all RBMs but the last. Move to joint-training.
             print '*** Done pretraining. Moving to joint tempered training. ***'
             model.flags['pretrain'] = False
             for rbm in model.rbms:

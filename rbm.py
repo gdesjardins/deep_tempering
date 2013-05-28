@@ -35,7 +35,8 @@ class RBM(Model, Block):
         flags.setdefault('ml_vbias', 0)
         flags.setdefault('enable_centering', False)
         flags.setdefault('train_on_samples', False)
-        if len(flags.keys()) != 3:
+        flags.setdefault('centered', True)
+        if len(flags.keys()) != 4:
             raise NotImplementedError('One or more flags are currently not implemented.')
 
     @classmethod
@@ -180,11 +181,8 @@ class RBM(Model, Block):
         params = [self.Wv, self.vbias, self.hbias]
         return params
 
-    def get_uncentered_param_values(self):
-        Wv = self.Wv.get_value()
-        vbias = self.vbias.get_value() - numpy.dot(self.ch.get_value(), Wv.T)
-        hbias = self.hbias.get_value() - numpy.dot(self.cv.get_value(), Wv)
-        return [Wv, vbias, hbias]
+    def get_param_values(self):
+        return [p.get_value() for p in self.params()]
 
     def do_theano(self):
         """ Compiles all theano functions needed to use the model"""
@@ -473,6 +471,28 @@ class RBM(Model, Block):
         chans['lr'] = self.lr
         return chans
 
+    def uncenter(self):
+        assert self.flags['centered']
+        cv = self.cv.get_value()
+        ch = self.ch.get_value()
+        self._backup = {'cv': cv, 'ch': ch}
+        Wv = self.Wv.get_value()
+        self.vbias.set_value(self.vbias.get_value() - numpy.dot(ch, Wv.T))
+        self.hbias.set_value(self.hbias.get_value() - numpy.dot(cv, Wv))
+        self.cv.set_value(numpy.zeros_like(cv))
+        self.ch.set_value(numpy.zeros_like(ch))
+        self.flags['centered'] = False
+
+    def recenter(self):
+        assert not self.flags['centered']
+        Wv = self.Wv.get_value()
+        self.vbias.set_value(self.vbias.get_value() + numpy.dot(self._backup['ch'], Wv.T))
+        self.hbias.set_value(self.hbias.get_value() + numpy.dot(self._backup['cv'], Wv))
+        self.cv.set_value(self._backup['cv'])
+        self.ch.set_value(self._backup['ch'])
+        del self._backup
+        self.flags['centered'] = True
+
 
 def reload_params(rbm, fname):
 
@@ -482,6 +502,9 @@ def reload_params(rbm, fname):
     rbm.Wv.set_value(model.Wv.get_value())
     rbm.hbias.set_value(model.hbias.get_value())
     rbm.vbias.set_value(model.vbias.get_value())
+    rbm.neg_ev.set_value(model.neg_ev.get_value())
+    rbm.neg_v.set_value(model.neg_v.get_value())
+    rbm.neg_h.set_value(model.neg_h.get_value())
 
     # sync random number generators
     rbm.rng.set_state(model.rng.get_state())
