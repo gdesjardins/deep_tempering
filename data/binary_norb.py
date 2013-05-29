@@ -73,21 +73,33 @@ class FoveatedPreprocNORB(dense_design_matrix.DenseDesignMatrix):
     binary representation (online) which can be used with binary RBMs or DBMs.
     """
 
-    def __init__(self, which_set, one_hot = False):
+    def __init__(self, which_set, one_hot = False, seed=1239):
         """
-        :param which_set: one of ['train','test']
+        :param which_set: one of ['train', 'valid', 'test']
         :param center: data is in range [0,256], center=True subtracts 127.5.
         :param multi_target: load extra information as additional labels.
         """
-        assert which_set in ['train','test']
+        assert which_set in ['train', 'valid', 'test']
         self.which_set = which_set
 
         # Load data and labels.
         base = '%s/norb_small/ruslan_binarized' % os.getenv('PYLEARN2_DATA_PATH')
-        fname = '%s/norb96x96x2_fov8422_%s_X.npy' % (base, which_set)
-        X = numpy.load(fname)
-        fname = '%s/norb96x96x2_fov8422_%s_Y.npy' % (base, which_set)
-        y = numpy.load(fname).astype('int')
+        if which_set in ['train', 'valid']:
+            xfname = '%s/norb96x96x2_fov8422_%s_X.npy' % (base, 'train')
+            yfname = '%s/norb96x96x2_fov8422_%s_Y.npy' % (base, 'train')
+        else:
+            xfname = '%s/norb96x96x2_fov8422_%s_X.npy' % (base, which_set)
+            yfname = '%s/norb96x96x2_fov8422_%s_Y.npy' % (base, which_set)
+
+        X = numpy.load(xfname)
+        y = numpy.load(yfname).astype('int')
+
+        if which_set in ['train', 'valid']:
+            rng = numpy.random.RandomState(seed)
+            pidx = rng.permutation(len(X))
+            idx = pidx[:-4300] if which_set == 'train' else pidx[-4300:]
+            X = X[idx]
+            y = y[idx]
 
         self.one_hot = one_hot
         if one_hot:
