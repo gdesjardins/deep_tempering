@@ -35,8 +35,9 @@ class RBM(Model, Block):
         flags.setdefault('ml_vbias', 0)
         flags.setdefault('enable_centering', False)
         flags.setdefault('train_on_samples', False)
+        flags.setdefault('sample_data', False)
         flags.setdefault('centered', True)
-        if len(flags.keys()) != 4:
+        if len(flags.keys()) != 5:
             raise NotImplementedError('One or more flags are currently not implemented.')
 
     @classmethod
@@ -272,7 +273,7 @@ class RBM(Model, Block):
                 dataset._iterator._subset_iterator.reset()
             x = dataset._iterator.next()
 
-        if self.flags['train_on_samples']:
+        if self.flags['sample_data']:
             x = (self.rng.random_sample(x.shape) < x).astype(floatX)
 
         t1 = time.time()
