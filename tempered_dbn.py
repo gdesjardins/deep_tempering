@@ -24,14 +24,13 @@ class TemperedDBN(Model, Block):
 
     def validate_flags(self, flags):
         flags.setdefault('train_on_samples', False)
+        flags.setdefault('sample_data', False)
         flags.setdefault('pretrain', False)
         flags.setdefault('order', 'swap_sample_learn')
-        if len(flags.keys()) != 3:
+        if len(flags.keys()) != 4:
             raise notimplementederror('one or more flags are currently not implemented.')
 
-    def __init__(self,
-            rbms=None, max_updates=1e6, flags={},
-            **kwargs):
+    def __init__(self, rbms=None, max_updates=1e6, flags={}):
         Model.__init__(self)
         Block.__init__(self)
         self.jobman_channel = None
@@ -84,9 +83,14 @@ class TemperedDBN(Model, Block):
             rbm.recenter()
 
     def do_theano(self):
+        init_names = dir(self)
+        ###### All fields you don't want to get pickled should be created below this line
         self.build_swap_funcs()
         self.build_inference_func(sample=True)
         self.build_inference_func(sample=False)
+        ###### All fields you don't want to get pickled should be created above this line
+        final_names = dir(self)
+        self.register_names_to_del( [ name for name in (final_names) if name not in init_names ])
 
     def init_train_sequence(self):
         self.rbms[0].flags['learn'] = True
@@ -180,7 +184,7 @@ class TemperedDBN(Model, Block):
                 dataset._iterator._subset_iterator.reset()
             x = dataset._iterator.next()
 
-        if self.flags['train_on_samples']:
+        if self.flags['sample_data']:
             x = self.rng.random_sample(x.shape) < x
 
         t1 = time.time()
