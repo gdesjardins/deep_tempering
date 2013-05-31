@@ -1,6 +1,7 @@
 import numpy
 import os
 import time
+import copy
 
 from pylearn2.datasets import dense_design_matrix
 from pylearn2.datasets import retina
@@ -36,6 +37,20 @@ class BinaryNORB(dense_design_matrix.DenseDesignMatrix):
             y = onehot_encoding(y)
 
         super(BinaryNORB, self).__init__(X = X, y = y)
+
+class NumpyLoader(dense_design_matrix.DenseDesignMatrix):
+
+    def __init__(self, fname):
+        """
+        :param which_set: one of ['train','test']
+        """
+        self.which_set = fname.split('.')[0]
+        # Load data and labels.
+        base = '%s/norb_small/ruslan_binarized' % os.getenv('PYLEARN2_DATA_PATH')
+        fname = '%s/%s' % (base, fname)
+        X = numpy.load(fname)
+        y = numpy.zeros(X.shape[0])
+        super(NumpyLoader, self).__init__(X = X, y = y)
 
 
 class MyBinaryNORB(dense_design_matrix.DenseDesignMatrix):
@@ -133,34 +148,113 @@ class PreprocIterator():
     def __iter__(self):
         return self
 
-    def next(self):
-        fovx = self.iterator.next()
+    def debug(self, fx):
 
-        t1 = time.time()
-        new_fovx = shift.shift_batch(
-                fovx,
+        # Unfoveated the current batch
+        fx1 = copy.copy(fx)
+        x1  = retina.decode(fx1, (96,96,2), (8,4,2,2))
+        
+        # Binarized, Reconstruct then defoveate minibatch
+        fx2  = copy.copy(fx)
+        bfx2 = self.grbm.preproc(fx2)
+        fxhat2 = self.grbm.reconstruct(bfx2)
+        xhat2  = retina.decode(fxhat2, (96,96,2), (8,4,2,2))
+
+        # Shift then defoveate minibatch
+        fx3  = copy.copy(fx)
+        sfx3 = shift.shift_batch(fx3,
                 topo_shape = self.topo_shape,
                 rings = self.rings,
                 maxshift = self.max_shift,
                 rng = self.rng)
-        #print 'Shift: ', time.time() - t1
+        sx3  = retina.decode(sfx3, (96,96,2), (8,4,2,2))
 
-        t1 = time.time()
-        bin_fovx = self.grbm.preproc(new_fovx)
-        #print 'GRBM: ', time.time() - t1
+        # Shift, binarize, reconstruct, then defoveate minibatch
+        bsfx4 = self.grbm.preproc(sfx3)
+        sfxhat4 = self.grbm.reconstruct(bsfx4)
+        sxhat4  = retina.decode(sfxhat4, (96,96,2), (8,4,2,2))
+ 
+        import pylab as pl
+        import pdb; pdb.set_trace()
+
+        for i in xrange(len(fx)):
+            pl.subplot(1,4,1); pl.gray(); pl.imshow(x1[i,:,:,0])
+            pl.subplot(1,4,2); pl.gray(); pl.imshow(sx3[i,:,:,0])
+            pl.subplot(1,4,3); pl.gray(); pl.imshow(xhat2[i,:,:,0])
+            pl.subplot(1,4,4); pl.gray(); pl.imshow(sxhat4[i,:,:,0])
+            pl.show()
+
         return bin_fovx
+
+
+    def next(self, debug=False):
+        _fovx = self.iterator.next()
+
+        # make explicit copy of batch data so we don't overwrite the original example !
+        fovx = copy.copy(_fovx)
+
+        # Shift then defoveate minibatch
+        shift.shift_batch(fovx,
+                topo_shape = self.topo_shape,
+                rings = self.rings,
+                maxshift = self.max_shift,
+                rng = self.rng)
+
+        bin_shift_fovx = self.grbm.preproc(fovx)
+
+        return bin_shift_fovx
 
 
 class TrainingAlgorithm(default.DefaultTrainingAlgorithm):
 
     def setup(self, model, dataset):
 
-        it = dataset.iterator(mode='sequential',
-                batch_size = model.batch_size)
-        dataset._iterator = PreprocIterator(it,
-                (96,96,2), (8,4,2,2), 6)
+        dataset._iterator = PreprocIterator(
+                dataset.iterator(
+                    mode='shuffled_sequential',
+                    batch_size = model.batch_size),
+                topo_shape = (96,96,2),
+                rings = (8,4,2,2),
+                max_shift = 6)
 
         x = dataset._iterator.next()
         model.init_parameters_from_data(x)
  
         super(TrainingAlgorithm, self).setup(model, dataset)
+
+
+if __name__ == '__main__':
+
+    """
+    from deep_tempering.data import grbm_preproc
+    grbm = grbm_preproc.GRBMPreprocessor()
+    # binary data extracted from Russ' MATLAB code (batchdata in MATLAB)
+    binrusX1 = binary_norb.BinaryNORB('train')
+    # foveated & other preprocessing's on NORB (fovimg1 and fovimg2 in MATLAB)
+    fovrusX2 = binary_norb.FoveatedPreprocNORB('train')
+    binrusX2 = grbm.encode(fovrusX2.X)
+    # We need to find the random mapping which was used to build "batchdata", so that we can
+    # numpy.sum(x1**2, axis=1)[:,None] + numpy.sum(x2**2, axis=1)[None,:] - 2*numpy.dot(x1, x2.T)
+    """
+
+    from deep_tempering.data import grbm_preproc
+    grbm = grbm_preproc.GRBMPreprocessor()
+
+    # generate a static validation and test set for the callback methods to work with
+    train = FoveatedPreprocNORB('train')
+    binary_train = grbm.preproc(train.X)
+    numpy.save('/data/lisa/data/norb_small/ruslan_binarized/binary_train_GD.npy', binary_train)
+    del train, binary_train
+
+    # generate a static validation and test set for the callback methods to work with
+    valid = FoveatedPreprocNORB('valid')
+    binary_valid = grbm.preproc(valid.X)
+    numpy.save('/data/lisa/data/norb_small/ruslan_binarized/binary_valid_GD.npy', binary_valid)
+    del valid, binary_valid
+
+    # generate a static validation and test set for the callback methods to work with
+    test = FoveatedPreprocNORB('test')
+    binary_test = grbm.preproc(test.X)
+    numpy.save('/data/lisa/data/norb_small/ruslan_binarized/binary_test_GD.npy', binary_test)
+    del test, binary_test
+
