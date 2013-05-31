@@ -55,7 +55,7 @@ class AdaptiveMCMCRBM(Model, Block):
     def __init__(self, 
             numpy_rng = None, theano_rng = None,
             n_h=99, n_v=100, init_from=None,
-            min_beta=0.9, num_beta=20, gamma=10, cratio=1,
+            min_beta=0.9, num_beta=20, gamma=10, cratio=1, cdelay=0,
             neg_sample_steps=1,
             lr_spec=None, lr_mults = {},
             iscales={}, clip_min={}, clip_max={},
@@ -181,6 +181,7 @@ class AdaptiveMCMCRBM(Model, Block):
                 high=self.num_beta-1,
                 size=(self.cratio * self.batch_size))
         self.beta_logw = numpy.zeros(self.num_beta)
+        self.swap_timer = 1
 
         # Beta weights (adaptive weights for WL)
         self.update_temperatures()
@@ -332,20 +333,38 @@ class AdaptiveMCMCRBM(Model, Block):
         self.beta_logw = self.beta_logw + numpy.log( (1. + self.gamma * counts))
         self.beta_logw -= self.beta_logw.min()
 
-        self.swap_T1_samples()
+        
+        if self.swap_timer == 0:
+            self.swap_T1_samples(delay=self.cdelay)
+        else:
+            self.swap_timer -= 1
 
-    def swap_T1_samples(self):
+    def swap_T1_samples(self, delay=0, verbose=False):
         # check if we have any T=1 samples to swap into untempered chains.
         t1_idx = self.batch_size + numpy.where(self.beta_idx == 0)[0]
-        # pick up to batch_size elements at most
-        t1_idx = t1_idx[:self.batch_size]
+        # pick a random subset of size up to `batch_size` elements.
+        t1_idx = self.rng.permutation(t1_idx)[:self.batch_size]
         # then pick untempered examples to swap with.
         coupling_idx = self.rng.permutation(self.batch_size)[:len(t1_idx)]
+
+        if verbose:
+            print "Swapping in %i tempered samples:" % len(t1_idx),
+            _temp = '(' + ''.join(['%i,' % i for i in t1_idx]) + ')'
+            print _temp + "<=> ",
+            _temp = '(' + ''.join(['%i,' % i for i in coupling_idx]) + ')'
+            print _temp
+
         ### perform swap ###
         x = self.neg_v.get_value()
         _temp = copy.copy(x[t1_idx])
         x[t1_idx] = x[coupling_idx]
         x[coupling_idx] = _temp
+        self.neg_v.set_value(x)
+
+        # postpone by next swap by a random amount, to allow some time for the newly swapped in
+        # particles to move up in temperature (and thus avoid them getting them swapped back
+        # into the buffer).
+        self.swap_timer = self.rng.random_integers(low=0, high = delay)
 
     def train_batch(self, dataset, batch_size):
 
@@ -380,16 +399,17 @@ class AdaptiveMCMCRBM(Model, Block):
         fe -= T.sum(T.nnet.softplus(T.shape_padright(beta) * h_input), axis=1)
         return fe
 
-    def free_energy_h(self, h_sample):
+    def free_energy_h(self, h_sample, beta=None):
         """
         Computes free-energy of hidden samples.
         :param v_sample: T.matrix of shape (batch_size, n_v)
         """
         fe  = 0.
-        fe -= T.dot(h_sample, self.hbias)
-        fe += T.sum(T.dot(h_sample, self.Wv.T) * self.cv, axis=1)
+        beta = beta if beta else 1.0
+        fe -= beta * T.dot(h_sample, self.hbias)
+        fe += beta * T.sum(T.dot(h_sample, self.Wv.T) * self.cv, axis=1)
         v_input = self.v_given_h_input(h_sample)
-        fe -= T.sum(T.nnet.softplus(v_input), axis=1)
+        fe -= T.sum(T.nnet.softplus(T.shape_padright(beta) * v_input), axis=1)
         return fe
 
     def __call__(self, v):
