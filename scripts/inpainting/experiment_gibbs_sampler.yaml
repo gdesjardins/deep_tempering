@@ -1,0 +1,19 @@
+!obj:deep_tempering.scripts.inpainting.inpainting.InPainting {
+    "dataset": &data !obj:pylearn2.datasets.mnist.MNIST {
+        "which_set": 'test',
+        "center": False,
+        "one_hot": True,
+        "binarize": 'sample',
+    },
+    "model": &model !pkl: '/data/lisatmp/desjagui/expdir/deep_tempering/briaree/nips13_deeptempering/desjagui_db/nips2013_mnist_tdbn_exp5_1/1/model_e2000000.pkl',
+    "sampler": !obj:deep_tempering.scripts.inpainting.inpainting.GibbsSampler {
+        "model": *model,
+        "mask": &mask !obj:deep_tempering.scripts.inpainting.inpainting._get_mask_half {
+            "im_shape": [28,28,1],
+            "left": True,
+        },
+    },
+    "mask": *mask,
+    "options": {},
+}
+
