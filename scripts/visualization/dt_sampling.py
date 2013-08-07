@@ -34,7 +34,10 @@ parser.add_option('--burnin',  action='store', type='int', dest='burnin')
 parser.add_option('--layer',  action='store', type='int', dest='layer', default=-1)
 parser.add_option('--skip',  action='store', type='int', dest='skip')
 parser.add_option('--norb',  action='store_true', dest='norb')
+parser.add_option('--bsize',  action='store', type='int', dest='bsize', default=None)
+parser.add_option('--savelast',  action='store_true', dest='savelast', default=False)
 parser.add_option('--batches_per_image',  action='store', type='int', dest='batches_per_image', default=10)
+parser.add_option('--init_from',  action='store', type='string', dest='init_from', default=None)
 (opts, args) = parser.parse_args()
 
 def sigm(x): return 1./(1. + numpy.exp(-x))
@@ -55,37 +58,71 @@ viewdims = slice(0, None) if opts.color else 0
 model = serial.load(opts.path)
 assert opts.layer < len(model.rbms)
 layer = len(model.rbms) - 1 if opts.layer == -1 else opts.layer
-model.do_theano()
+
+# optionally change minibatch size
+if opts.bsize:
+    model.batch_size = opts.bsize
+    for rbm in model.rbms:
+        rbm.batch_size = opts.bsize
+    bsize = opts.bsize
+else:
+    bsize = model.rbms[0].batch_size
+
 for rbm in model.rbms:
     rbm.init_chains()
     rbm.do_theano()
+model.do_theano()
 
 #### random init ####
 rng = numpy.random.RandomState(123)
-bsize = model.rbms[0].batch_size
-nv = model.rbms[0].n_v
-samples = numpy.zeros((opts.nsamples, bsize, nv))
 
 def reset_chains():
-    for rbm in model.rbms:
-        vbias = sigm(rbm.vbias.get_value())
-        negv = rng.binomial(n=1, p=vbias,
-                size=(bsize, rbm.n_v))
+    if opts.init_from == 'mnist':
+        from pylearn2.datasets import mnist
+        data = mnist.MNIST('test', center=False, one_hot=True, binarize='sample')
+
+    for i, rbm in enumerate(model.rbms):
+
+        if opts.init_from == 'mnist':
+            idx = rng.permutation(numpy.arange(len(data.X)))[:bsize]
+            negv = data.X[idx]
+            for lower_rbm in model.rbms[:i]:
+                negv = lower_rbm.h_given_v_func(negv)
+        elif opts.init_from == 'random':
+            negv = rng.binomial(n=1, p=0.5, size=(bsize, rbm.n_v))
+        else:
+            raise ValueError('Wrong value for parameter `init_from`')
+
         rbm.neg_v.set_value(negv.astype(floatX))
 
 reset_chains()
 for i in xrange(opts.burnin):
+    model.do_swaps()
     model.do_sample()
+    model.batches_seen+=1
     print 'Burn-in: %i/%i\r' % (i, opts.burnin),
+    sys.stdout.flush()
 print ''
 
+nv = model.rbms[0].n_v
+samples = numpy.zeros((opts.nsamples, bsize, nv), dtype='uint8')
+
+swapped = False
 for i in xrange(opts.nsamples):
+
+    # run for a fixed number of iteration
     for j in xrange(opts.skip):
         model.do_swaps()
         model.do_sample()
-    samples[i] = model.rbms[0].neg_ev.get_value()
+        model.batches_seen+=1
+
+    samples_i = model.rbms[0].neg_v.get_value()
+    samples[i] = (samples_i * 255).astype('uint8')
     print 'sampling: %i/%i\r' % (i, opts.nsamples),
-print ''
+    sys.stdout.flush()
+
+print '\nSwap Ratios = ', model.swap_ratios
+sys.stdout.flush()
 
 if opts.norb:
     from deep_tempering.data import grbm_preproc
@@ -93,31 +130,8 @@ if opts.norb:
     _temp = grbm.reconstruct(samples.reshape(-1, nv))
     samples = _temp.reshape(samples.shape)
 
-
-viewer = PatchViewer((opts.nsamples, opts.batches_per_image),
-                     (opts.height, opts.width),
-                      is_color = opts.color,
-                      pad=(10,10))
-
-mbsize = opts.batches_per_image
-for bidx in xrange(0, bsize, mbsize):
-
-    batch = samples[:, bidx:bidx + mbsize, :]
-
-    for i in xrange(opts.nsamples):
-
-        batch_at_ith_sample = batch[i, :]
-        if opts.rings:
-            b_sample = retina.decode(
-                    batch_at_ith_sample,
-                    (opts.height, opts.width, opts.chans),
-                    opts.rings)
-        else:
-            b_sample = batch_at_ith_sample.reshape(mbsize, opts.height, opts.width, opts.chans)
-
-        for mbidx in xrange(len(b_sample)):
-            viewer.add_patch(b_sample[mbidx,:,:,0])
-
-    pl.imshow(viewer.image)
-    pl.savefig('samples_batch%i.png' % bidx)
-    viewer.clear()
+if not opts.savelast:
+    numpy.save('dt_samples.npy', samples.reshape(-1, bsize, opts.width, opts.height))
+else:
+    numpy.save('dt_samples_last.npy', samples[-1,:,:])
+    numpy.save('dt_samples_mean.npy', samples[-1].mean(axis=0).reshape(1, opts.width, opts.height))

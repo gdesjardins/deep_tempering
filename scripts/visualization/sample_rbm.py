@@ -34,6 +34,9 @@ parser.add_option('--burnin',  action='store', type='int', dest='burnin')
 parser.add_option('--skip',  action='store', type='int', dest='skip')
 parser.add_option('--norb',  action='store_true', dest='norb')
 parser.add_option('--batches_per_image',  action='store', type='int', dest='batches_per_image', default=10)
+parser.add_option('--bsize',  action='store', type='int', dest='bsize', default=None)
+parser.add_option('--savelast',  action='store_true', dest='savelast', default=False)
+parser.add_option('--init_from',  action='store', type='string', dest='init_from', default=None)
 (opts, args) = parser.parse_args()
 
 def get_dims(nf):
@@ -56,18 +59,33 @@ viewdims = slice(0, None) if opts.color else 0
 
 # load model and retrieve parameters
 model = serial.load(opts.path)
+
+# optionally change minibatch size
+if opts.bsize:
+    model.batch_size = opts.bsize
+bsize = model.batch_size
+
 model.init_chains()
 model.do_theano()
 
 #### random init ####
 rng = numpy.random.RandomState(123)
-bsize = model.batch_size
-samples = numpy.zeros((opts.nsamples, bsize, model.n_v))
+samples = numpy.zeros((opts.nsamples, bsize, model.n_v), dtype='uint8')
 
 def reset_chains():
-    vbias = sigm(model.vbias.get_value())
-    negv = rng.binomial(n=1, p=vbias, size=(bsize, model.n_v))
-    model.neg_v.set_value(negv.astype(floatX))
+    """
+    Reset model's Markov chains to random or to test examples from a given distribution.
+    """
+    if opts.init_from == 'mnist':
+        from pylearn2.datasets import mnist
+        data = mnist.MNIST('test', center=False, one_hot=True, binarize='sample')
+        idx = rng.permutation(numpy.arange(len(data.X)))[:bsize]
+        model.neg_v.set_value(data.X[idx])
+    elif opts.init_from == 'random':
+        negv = rng.binomial(n=1, p=0.5, size=(bsize, model.n_v))
+        model.neg_v.set_value(negv.astype(floatX))
+    else:
+        raise ValueError('Wrong value for parameter `init_from`')
 
 reset_chains()
 for i in xrange(opts.burnin):
@@ -76,7 +94,9 @@ for i in xrange(opts.burnin):
 for i in xrange(opts.nsamples):
     for j in xrange(opts.skip):
         model.sample_func()
-    samples[i, :, :] = model.neg_ev.get_value()
+    samples_i = model.neg_v.get_value()
+    samples[i] = (samples_i * 255).astype('uint8')
+    print 'sampling: %i/%i\r' % (i, opts.nsamples),
 
 if opts.norb:
     from deep_tempering.data import grbm_preproc
@@ -85,24 +105,9 @@ if opts.norb:
     del samples
     samples = _temp.reshape(opts.nsamples, bsize, _temp.shape[1])
 
-viewer = PatchViewer((opts.nsamples, opts.batches_per_image),
-                     (opts.height, opts.width),
-                      is_color = opts.color,
-                      pad=(10,10))
-
-mbsize = opts.batches_per_image
-for kbase in xrange(0, bsize, mbsize):
-    for i in xrange(opts.nsamples):
-
-        bidx = slice(kbase, kbase+mbsize)
-        if opts.rings:
-            b_sample = retina.decode(samples[i, bidx], (opts.height, opts.width, opts.chans), opts.rings)
-        else:
-            b_sample = samples[i, bidx].reshape(bsize, opts.height, opts.width, opts.chans)
-
-        for k in xrange(mbsize):
-            viewer.add_patch(b_sample[k,:,:,0])
-
-    pl.imshow(viewer.image)
-    pl.savefig('samples_batch%i.png' % kbase)
-    viewer.clear()
+if not opts.savelast:
+    numpy.save('rbm_samples.npy', samples)
+    numpy.save('rbm_samples_batch0.npy', samples[:,0,:].reshape(-1, 1, opts.width, opts.height))
+else:
+    numpy.save('rbm_samples_last.npy', samples[-1,:,:])
+    numpy.save('rbm_samples_mean.npy', samples[-1].mean(axis=0).reshape(1, opts.width, opts.height))
