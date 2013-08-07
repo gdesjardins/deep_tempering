@@ -42,6 +42,14 @@ def autocorrelation(samples,
     numpy.save(saving_file, auto_coef)
 
 lag = 5000 
+filename = 'mnist_rbm_auto'
+_mean = "%s/nips2013_mnist_rbm_exp5_1/3/rbm_samples_mean.npy" % BASE
+_samples = "%s/nips2013_mnist_rbm_exp5_1/3/rbm_samples.npy" % BASE
+mean = numpy.load(_mean).astype('float32').reshape(1, 28, 28)
+samples = numpy.load(_samples)[:,::10].astype('float32').reshape(-1, 10, 28, 28)
+autocorrelation(samples, mean, lag, filename)
+del mean
+del samples
 
 filename = 'mnist_tdbn2_auto'
 _mean    = "%s/nips2013_mnist_tdbn_exp5_1/10/dt_samples_mean.npy" % BASE
@@ -52,22 +60,11 @@ autocorrelation(samples, mean, lag, filename)
 del mean
 del samples
 
-"""
-filename = 'mnist_rbm_auto'
-_mean = "%s/nips2013_mnist_rbm_exp5_1/3/rbm_samples_mean.npy" % BASE
-_samples = "%s/nips2013_mnist_rbm_exp5_1/3/rbm_samples.npy" % BASE
-mean = numpy.load(_mean).astype('float32').reshape(1, 28, 28)
-samples = numpy.load(_samples)[:,::10].astype('float32').reshape(-1, 10, 28, 28)
-autocorrelation(samples, mean, lag, filename)
-del mean
-del samples
-
 filename = 'mnist_tdbn3_auto'
-_mean = "%s/nips2013_mnist_tdbn_exp5_2/11/dt_samples_mean.npy" % BASE
+_mean    = "%s/nips2013_mnist_tdbn_exp5_2/11/dt_samples_mean.npy" % BASE
 _samples = "%s/nips2013_mnist_tdbn_exp5_2/11/dt_samples.npy" % BASE
 mean = numpy.load(_mean).astype('float32')
 samples = numpy.load(_samples)[:,::10].astype('float32')
 autocorrelation(samples, mean, lag, filename)
 del mean
 del samples
-"""

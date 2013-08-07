@@ -31,7 +31,7 @@ def compute_average(nh2=10, lr_start=0.1, node='swap0', col=None):
             y.std(axis=0)[::10]]
 
 assert len(os.sys.argv[1]) > 1
-for nh2 in [10, 50]:
+for nh2 in [10]:
     for lr in ["0.001", "0.0001", "1e-05"]:
         pl.figure()
         if os.sys.argv[1] == 'swap0':

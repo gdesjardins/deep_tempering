@@ -205,6 +205,8 @@ class RBM(Model, Block):
         self.h_given_v_func = theano.function([self.input], self.h_given_v(self.input))
         self.sample_v_given_h_func = theano.function([self.input], self.sample_v_given_h(self.input))
         self.sample_h_given_v_func = theano.function([self.input], self.sample_h_given_v(self.input))
+        h = T.matrix('h')
+        self.energy_func = theano.function([self.input, h], self.energy(self.input, h))
 
         ##
         # BUILD COST OBJECTS
@@ -312,6 +314,13 @@ class RBM(Model, Block):
         v_input = self.v_given_h_input(h_sample)
         fe -= T.sum(T.nnet.softplus(v_input), axis=1)
         return fe
+
+    def energy(self, v_sample, h_sample):
+        e = 0.
+        e -= T.sum(numpy.dot(v_sample, self.Wv) * h_sample, axis=1)
+        e -= T.dot(v_sample, self.vbias)
+        e -= T.dot(h_sample, self.hbias)
+        return e
 
     def __call__(self, v):
         return self.h_given_v(v)

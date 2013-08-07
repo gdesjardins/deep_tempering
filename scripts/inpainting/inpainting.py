@@ -143,7 +143,7 @@ class ConditionalDTSampler():
     Performs a conditional version of DTNegPhase.
     """
 
-    def __init__(self, model, mask):
+    def __init__(self, model, mask, cond_v_only=False):
         model.do_theano()
         for rbm in model.rbms:
             rbm.do_theano()
@@ -151,6 +151,7 @@ class ConditionalDTSampler():
         self.v0_mask = mask
         self.swap_ratios = [0 for i in range(model.depth-1)]
         self.count = 0
+        self.cond_v_only = cond_v_only
         self.rng = numpy.random.RandomState(1234)
 
     def clamp(self, negv, x):
@@ -197,9 +198,19 @@ class ConditionalDTSampler():
         vi   = rbm_i.neg_v.get_value()
         hi   = rbm_i.neg_h.get_value()
         vip1 = rbm_ip1.neg_v.get_value()
-        hip1_mask = numpy.ones(rbm_ip1.n_h).astype(numpy.bool)
-        vi_mask = numpy.ones(rbm_i.n_v).astype(numpy.bool) if i > 0 else \
-                  self.v0_mask
+
+        if self.cond_v_only:
+            hip1_mask = numpy.zeros(rbm_ip1.n_h).astype(numpy.bool)
+            if i == 0:
+                vi_mask = self.v0_mask
+            else:
+                vi_mask = numpy.zeros(rbm_i.n_v).astype(numpy.bool)
+        else:
+            hip1_mask = numpy.ones(rbm_ip1.n_h).astype(numpy.bool)
+            if i == 0:
+                vi_mask = self.v0_mask
+            else:
+                vi_mask = numpy.ones(rbm_i.n_v).astype(numpy.bool)
 
         # compute log-probability of new / old configuration
         logp_old1 = _fe_cond(rbm_i, hi, vi_mask, over_hiddens=True)

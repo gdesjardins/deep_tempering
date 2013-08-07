@@ -12,6 +12,7 @@
             "im_shape": [28,28,1],
             "left": True,
         },
+        "cond_v_only": False,
     },
     "mask": *mask,
     "options": {},

@@ -14,9 +14,10 @@ def compute_average(nh2=10, lr_start=0.1, prefix='rbm'):
     y = None
 
     p = os.popen(cmd)
+    import pdb; pdb.set_trace()
     for match in p:
         jid = match.split('/')[1]
-        rfname = '%s/%s_likelihood_callback.hdf5' % (jid, prefix)
+        rfname = '%s/%s_test_callback.hdf5' % (jid, prefix)
         fp = tables.openFile(rfname)
         if x is None:
             x = fp.root.train_ll.col('n')
@@ -31,7 +32,7 @@ def compute_average(nh2=10, lr_start=0.1, prefix='rbm'):
 
 
 
-for prefix in ['rbm', 'dbn']:
+for prefix in ['rbm0', 'dbn2']:
     for nh2 in [10]:
         pl.figure()
         for lr in ["0.001", "0.0001", "1e-05"]:

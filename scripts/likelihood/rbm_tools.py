@@ -367,7 +367,7 @@ class AIS(object):
                               fX(numpy.linspace(0.9, 1.0, 1e5))))
 
     def __init__(self, sample_fn, free_energy_fn, v_sample0, n_runs,
-                 log_int=500, verbose=False):
+                 log_int=500, verbose=True):
         """
         Initialized the AIS object.
 

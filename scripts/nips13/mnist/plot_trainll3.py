@@ -32,25 +32,33 @@ def compute_average(nh=10, lr_num=10, lr_denum=1000, prefix='rbm', smoothing=Tru
         _vlogz = fp.root.var_logz.col('var_logz')
         fp.close()
 
-        idx = numpy.where(_vlogz < 10.)[0]
-        x[i, idx] = _x[idx]
-        y[i, idx] = _y[idx]
+        if smoothing:
+            idx = numpy.where(_vlogz < 50.)[0]
+            x[i, idx] = _x[idx]
+            y[i, idx] = _y[idx]
+        else:
+            x[i, :len(_x)] = _x
+            y[i, :len(_y)] = _y
     
     print '**** prefix=%s nh=%i lr_num=%s lr_denum=%s ******' % (prefix, nh, lr_num, lr_denum)
     print nanmean(y, axis=0)
 
-    return [nanmean(x, axis=0),
-            nanmean(y, axis=0),
-            nanstd(y, axis=0)]
+    xmean = nanmean(x, axis=0)
+    ymean = nanmean(y, axis=0)
+    ystd  = nanstd(y, axis=0)
+    ystd[numpy.isnan(ystd)] = 0.
+    idx =  ~numpy.isnan(xmean)
+    return [xmean[idx], ymean[idx], ystd[idx]]
 
-lr_config = [(10, 2000),
-             (100, 20000),
+lr_config = [#(10, 2000),
+             #(100, 20000),
              (500, 100000),
              (1000, 200000),
              (2000, 400000),
              (4000, 800000)]
 
 nh2 = 500
+clrs = ['r','g','b','c']
 for prefix in os.sys.argv[1:]:
     assert prefix in ['rbm0', 'dbn1', 'dbn2']
 
@@ -58,10 +66,11 @@ for prefix in os.sys.argv[1:]:
             'y': numpy.ones((len(lr_config), 20)) * -numpy.Inf,
             'std': numpy.zeros((len(lr_config), 20)),
             'label': []}
+    yticks = []
 
     pl.figure()
-    for i, (lr_num, lr_denum) in enumerate(lr_config):
-        label = '(%i,%i)' % (int(lr_num), int(lr_denum))
+    for i, ((lr_num, lr_denum), clr) in enumerate(zip(lr_config, clrs)):
+        label = r'$(\alpha_1=%.0e, \alpha_2=%.0e)$' % (int(lr_num), int(lr_denum))
 
         [x, y, std] = compute_average(nh2, lr_num, lr_denum, prefix)
         data['x'][i, :len(x)] = x
@@ -69,12 +78,20 @@ for prefix in os.sys.argv[1:]:
         data['std'][i, :len(std)] = std
         data['label'] += [label]
 
-        pl.errorbar(x, y, yerr=std, label=label)
+        pl.plot(x, y, label=label, color=clr)
+        pl.fill_between(x, y-std, y+std, alpha=0.1, color=clr)
+        yticks.append(y[-1])
 
+    yticks = numpy.round(numpy.array(yticks) / 1., 0) * 1
+
+    ylim = (-95, -82)
     pl.legend(loc='lower right')
     pl.xlabel('nupdates')
     pl.ylabel('train_ll')
-    pl.ylim((-95,-82))
+    pl.ylim(ylim)
+    ax2 = pl.twinx()
+    ax2.set_yticks(yticks)
+    ax2.set_ylim(ylim)
     pl.savefig('trainll_tdbn_%s_nh2=%i.png' % (prefix,nh2))
     pl.close()
 

@@ -143,22 +143,33 @@ class TemperedDBN(Model, Block):
         self.rbms[i].neg_v.set_value(rbm1_negv)
         self.rbms[i+1].neg_v.set_value(rbm2_negv)
         self.swap_ratios[i] = alpha * self.swap_ratios[i] + (1.-alpha) * swap.mean()
+        return swap.any()
 
     def do_swaps(self):
+
+        swapped = numpy.zeros(self.depth-1)
+
         for i in xrange(self.depth - 1):
+
+            iswapped = False
+
             if len(self.rbms) == 2:
                 # always swap for 2-layer model
-                self.do_swap(i)
+                iswapped = self.do_swap(i)
             else:
                 # When using > 2 layers, we swap RBMs (i,i+1) with even i, on
                 # even iterations, and RBMs (i,i+1) with odd i, on odd
                 # iterations.
                 if i % 2 == 0 and self.batches_seen % 2 == 0:
                     # swap even layers at even iterations
-                    self.do_swap(i)
+                    iswapped = self.do_swap(i)
                 elif i % 2 == 1 and self.batches_seen % 2 == 1:
                     # swap odd layers at odd iterations
-                    self.do_swap(i)
+                    iswapped = self.do_swap(i)
+
+            swapped[i] = iswapped
+
+        return swapped
 
     def do_sample(self):
         for rbm in self.rbms:
