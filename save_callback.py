@@ -1,14 +1,14 @@
-from pylearn2.training_callbacks.training_callback import TrainingCallback
+from pylearn2.train_extensions import TrainExtension
 from pylearn2.utils import serial
 
-class pylearn2_save_callback(TrainingCallback):
+class pylearn2_save_callback(TrainExtension):
 
     def __init__(self, my_save_path=None, save_at=None, save_every=None):
         self.my_save_path = my_save_path
         self.save_at = save_at
         self.save_every = save_every
 
-    def __call__(self, model, train, algorithm):
+    def on_monitor(self, model, dataset, algorithm):
 
         is_save_interval = (
                 model.batches_seen in self.save_at or

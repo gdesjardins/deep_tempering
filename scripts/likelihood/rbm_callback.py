@@ -2,14 +2,14 @@ import theano
 import numpy
 import pickle
 
-from pylearn2.training_callbacks.training_callback import TrainingCallback
+from pylearn2.train_extensions import TrainExtension
 from deep_tempering.scripts.likelihood import rbm_tools
 from deep_tempering.tempered_dbn import TemperedDBN
 from deep_tempering.utils import logging
 floatX = theano.config.floatX
 npy_floatX = getattr(numpy, floatX)
 
-class pylearn2_rbm_likelihood_callback(TrainingCallback):
+class pylearn2_rbm_likelihood_callback(TrainExtension):
 
     def __init__(self, trainset, interval=10, layer=0):
         self.trainset = trainset
@@ -26,7 +26,7 @@ class pylearn2_rbm_likelihood_callback(TrainingCallback):
                 'best_var_logz': 0.,
                 }
 
-    def __call__(self, model, train, algorithm):
+    def on_monitor(self, model, dataset, algorithm):
 
         def preproc(x):
             """
