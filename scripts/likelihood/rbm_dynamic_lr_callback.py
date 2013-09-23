@@ -10,9 +10,15 @@ from deep_tempering.utils import logging
 floatX = theano.config.floatX
 npy_floatX = getattr(numpy, floatX)
 
-class pylearn2_rbm_pretrain_callback(TrainingExtension):
+class pylearn2_dynamic_lr_callback(TrainingExtension):
+    """
+    Adjusts the learning rates for all layers of the DBN, based on the estimated
+    training set likelihood (of the data under the first layer model). When we
+    detect a decrease in likelihood, the learning rate for all RBMs is halved.
+    """
 
     def __init__(self, trainset, interval=10, layer=0):
+        assert layer == 0
         self.trainset = trainset
         self.interval = interval
         self.layer = layer
@@ -28,15 +34,9 @@ class pylearn2_rbm_pretrain_callback(TrainingExtension):
                 }
 
     def on_monitor(self, model, dataset, algorithm):
-
-        def preproc(x):
-            """
-            Helper function which generates the representation at layer `self.layer`.
-            """
-            if isinstance(model, TemperedDBN):
-                for rbm in model.rbms[:self.layer]:
-                    x = rbm.post_func(x)
-            return x
+        assert model.flags['pretrain'] == False
+        for rbm in model.rbms:
+            assert rbm.lr_spec['type'] == 'constant'
 
         if model.batches_seen == 0:
             return
@@ -44,8 +44,29 @@ class pylearn2_rbm_pretrain_callback(TrainingExtension):
             return
 
         rbm = model.rbms[self.layer] if isinstance(model, TemperedDBN) else model
-        rbm.uncenter()
+        train_ll = self.estimate_likelihood(model, rbm)
+        print 'rbm%i: current=%f\t best=%f' % (self.layer, train_ll, self.jobman_results['best_train_ll'])
 
+        is_increasing = train_ll >= self.jobman_results['best_train_ll']
+
+        if is_increasing:
+            self.log(rbm, train_ll, rbm.logz.get_value(), rbm.var_logz)
+        else:
+            self.decrease_lr(model)
+
+        if model.jobman_channel:
+            model.jobman_channel.save()
+
+    def preproc(self, model, x):
+        """
+        Helper function which generates the representation at layer `self.layer`.
+        """
+        if isinstance(model, TemperedDBN):
+            for rbm in model.rbms[:self.layer]:
+                x = rbm.post_func(x)
+        return x
+
+    def estimate_likelihood(self, model, rbm):
         logz = rbm.logz.get_value()
         if not logz:
             # Estimate partition function
@@ -58,7 +79,7 @@ class pylearn2_rbm_pretrain_callback(TrainingExtension):
                         rbm.get_uncentered_param_values(),
                         n_runs=100,
                         data = self.trainset.X,
-                        preproc = preproc)
+                        preproc = lambda x: self.preproc(model, x))
             rbm.logz.set_value(npy_floatX(logz))
             rbm.var_logz = var_logz
 
@@ -66,30 +87,15 @@ class pylearn2_rbm_pretrain_callback(TrainingExtension):
                 data = self.trainset.X,
                 log_z = logz,
                 free_energy_fn = rbm.fe_v_func,
-                preproc = preproc)
-        print 'rbm%i: current=%f\t best=%f' % (self.layer, train_ll, self.jobman_results['best_train_ll'])
+                preproc = lambda x: self.preproc(model, x))
 
-        is_increasing = train_ll >= self.jobman_results['best_train_ll']
-
-        # recenter model
-        rbm.recenter()
-
-        if model.flags['pretrain']:
-            if is_increasing:
-                self.log(rbm, train_ll, logz, rbm.var_logz)
-            elif rbm.flags['learn']:
-                self.stop_pretrain(model, rbm)
-        else:
-            self.log(rbm, train_ll, logz, rbm.var_logz)
-
-        if model.jobman_channel:
-            model.jobman_channel.save()
-
-    def log(self, model, train_ll, logz, var_logz):
+        return train_ll
+ 
+    def log(self, rbm, train_ll, logz, var_logz):
 
         # log to database
-        self.jobman_results['batches_seen'] = model.batches_seen
-        self.jobman_results['cpu_time'] = model.cpu_time
+        self.jobman_results['batches_seen'] = rbm.batches_seen
+        self.jobman_results['cpu_time'] = rbm.cpu_time
         self.jobman_results['train_ll'] = train_ll
         self.jobman_results['logz'] = float(logz)
         self.jobman_results['var_logz'] = float(var_logz)
@@ -98,29 +104,21 @@ class pylearn2_rbm_pretrain_callback(TrainingExtension):
         self.jobman_results['best_train_ll'] = self.jobman_results['train_ll']
         self.jobman_results['best_logz'] = self.jobman_results['logz']
         self.jobman_results['best_var_logz'] = self.jobman_results['var_logz']
-        model.jobman_state.update(self.jobman_results)
+        rbm.jobman_state.update(self.jobman_results)
 
         # log to hdf5
-        self.logger.log_list(model.batches_seen,
+        self.logger.log_list(rbm.batches_seen,
                 [('train_ll', '%.3f', train_ll),
                  ('logz', '%.3f', logz),
-                 ('var_logz', '%.3f', var_logz)])
+                 ('var_logz', '%.3f', var_logz),
+                 ('lr', '%.6f', rbm.lr.get_value())])
 
-    def stop_pretrain(self, model, rbm):
-        assert rbm.flags['learn']
-
-        print '*** Train likelihood decreased. Stopping pretraining for rbm%i ***' % self.layer
-        print 'Reloading from previous checkpoint...',
-        reload_params(rbm, rbm.fname)
-        print 'done.'
-
-        if self.layer == len(model.rbms)-2:
-            # Done pretraining all RBMs but the last. Move to joint-training.
-            print '*** Done pretraining. Moving to joint tempered training. ***'
-            model.flags['pretrain'] = False
-            for rbm in model.rbms:
-                rbm.flags['learn'] = True
-        else:
-            # This layer is done. Train the next layer.
-            rbm.flags['learn'] = False
-            model.rbms[self.layer + 1].flags['learn'] = True
+    def decrease_lr(self, model):
+        print '*** Train likelihood decreased. Halving learning rate. ***'
+        for i, rbm in enumerate(model.rbms):
+            assert rbm.flags['learn']
+            print 'Reloading rbm%i from previous checkpoint...' % i,
+            reload_params(rbm, rbm.fname)
+            print 'done.'
+            #rbm.lr.set_value(npy_floatX(0.1 * rbm.lr.get_value()))
+            rbm.lr.set_value(0.0)

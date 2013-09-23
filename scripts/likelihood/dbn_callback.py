@@ -20,7 +20,7 @@ class pylearn2_dbn_likelihood_callback(TrainExtension):
         self.trainset = trainset
         self.interval = interval
         self.layer = layer
-        fname = 'dbn%i_%s_callback.hdf5' % (layer, trainset.which_set)
+        fname = 'dbn%i_%s_callback.hdf5' % (layer, trainset.args['which_set'])
         self.logger = logging.HDF5Logger(fname)
 
         self.jobman_results = {
