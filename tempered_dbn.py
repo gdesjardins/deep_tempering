@@ -27,7 +27,8 @@ class TemperedDBN(Model, Block):
         flags.setdefault('sample_data', False)
         flags.setdefault('pretrain', False)
         flags.setdefault('order', 'swap_sample_learn')
-        if len(flags.keys()) != 4:
+        flags.setdefault('use_dtneg', False)
+        if len(flags.keys()) != 5:
             raise notimplementederror('one or more flags are currently not implemented.')
 
     def __init__(self, rbms=None, max_updates=1e6, flags={}):
@@ -176,9 +177,15 @@ class TemperedDBN(Model, Block):
             rbm.sample_func()
 
     def do_learn(self, x):
+
         for rbm in self.rbms:
+
             if rbm.flags['learn']:
                 rbm.batch_train_func(x)
+
+            if self.flags['use_dtneg']:
+                x = rbm.neg_v.get_value()
+
             if self.flags['train_on_samples']:
                 x = rbm.sample_h_given_v_func(x)
             else:
