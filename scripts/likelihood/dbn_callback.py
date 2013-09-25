@@ -62,6 +62,7 @@ class pylearn2_dbn_likelihood_callback(TrainExtension):
 
         self.log(model, train_ll, logz, rbm.var_logz)
         if model.jobman_channel:
+            model.jobman_state.update(self.jobman_results)
             model.jobman_channel.save()
 
     def log(self, model, train_ll, logz, var_logz):
@@ -78,7 +79,6 @@ class pylearn2_dbn_likelihood_callback(TrainExtension):
             self.jobman_results['best_train_ll'] = self.jobman_results['train_ll']
             self.jobman_results['best_logz'] = self.jobman_results['logz']
             self.jobman_results['best_var_logz'] = self.jobman_results['var_logz']
-        model.jobman_state.update(self.jobman_results)
 
         self.logger.log_list(model.batches_seen,
                 [('train_ll', '%.3f', train_ll),

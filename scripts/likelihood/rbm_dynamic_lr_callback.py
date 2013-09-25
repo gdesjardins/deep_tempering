@@ -55,6 +55,7 @@ class pylearn2_dynamic_lr_callback(TrainingExtension):
             self.decrease_lr(model)
 
         if model.jobman_channel:
+            rbm.jobman_state.update(self.jobman_results)
             model.jobman_channel.save()
 
     def preproc(self, model, x):
@@ -104,7 +105,6 @@ class pylearn2_dynamic_lr_callback(TrainingExtension):
         self.jobman_results['best_train_ll'] = self.jobman_results['train_ll']
         self.jobman_results['best_logz'] = self.jobman_results['logz']
         self.jobman_results['best_var_logz'] = self.jobman_results['var_logz']
-        rbm.jobman_state.update(self.jobman_results)
 
         # log to hdf5
         self.logger.log_list(rbm.batches_seen,

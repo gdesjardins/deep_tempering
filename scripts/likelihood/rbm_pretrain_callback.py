@@ -83,13 +83,14 @@ class pylearn2_rbm_pretrain_callback(TrainingExtension):
             self.log(rbm, train_ll, logz, rbm.var_logz)
 
         if model.jobman_channel:
+            model.jobman_state.update(self.jobman_results)
             model.jobman_channel.save()
 
-    def log(self, model, train_ll, logz, var_logz):
+    def log(self, rbm, train_ll, logz, var_logz):
 
         # log to database
-        self.jobman_results['batches_seen'] = model.batches_seen
-        self.jobman_results['cpu_time'] = model.cpu_time
+        self.jobman_results['batches_seen'] = rbm.batches_seen
+        self.jobman_results['cpu_time'] = rbm.cpu_time
         self.jobman_results['train_ll'] = train_ll
         self.jobman_results['logz'] = float(logz)
         self.jobman_results['var_logz'] = float(var_logz)
@@ -98,10 +99,9 @@ class pylearn2_rbm_pretrain_callback(TrainingExtension):
         self.jobman_results['best_train_ll'] = self.jobman_results['train_ll']
         self.jobman_results['best_logz'] = self.jobman_results['logz']
         self.jobman_results['best_var_logz'] = self.jobman_results['var_logz']
-        model.jobman_state.update(self.jobman_results)
 
         # log to hdf5
-        self.logger.log_list(model.batches_seen,
+        self.logger.log_list(rbm.batches_seen,
                 [('train_ll', '%.3f', train_ll),
                  ('logz', '%.3f', logz),
                  ('var_logz', '%.3f', var_logz)])
