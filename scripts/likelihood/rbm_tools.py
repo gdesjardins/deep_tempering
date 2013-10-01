@@ -522,3 +522,25 @@ class AIS(object):
                      numpy.sum(numpy.exp(log_ais_w - m)) ** 2 - 1.)
 
         return dlogz, var_dlogz
+
+
+def compute_true_gradient(rbm):
+    assert rbm.n_h < 15
+
+    h = tensor.matrix('h')
+    fe_h = rbm.free_energy_h(h)
+    free_energy_fn = theano.function([h], fe_h)
+    grad_fn = theano.function([h], tensor.grad(fe_h.mean(), rbm.Wv))
+
+    logz = compute_log_z(rbm, free_energy_fn)
+
+    rval = numpy.zeros((rbm.n_v, rbm.n_h))
+    for i in xrange(2**rbm.n_h):
+        hconfig = [int(x) for x in ('{0:0%ib}' % rbm.n_h).format(i)]
+        hconfig = numpy.array(hconfig, dtype=config.floatX)[None, :]
+        log_ph = -free_energy_fn(hconfig) - logz
+        rval += numpy.exp(log_ph) * grad_fn(hconfig)
+
+    return rval
+        
+
